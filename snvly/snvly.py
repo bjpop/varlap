@@ -6,24 +6,18 @@ License     : MIT
 Maintainer  : bjpope@unimelb.edu.au 
 Portability : POSIX
 
-The program reads one or more input FASTA files. For each file it computes a
-variety of statistics, and then prints a summary of the statistics as output.
 '''
 
 from argparse import ArgumentParser
-from math import floor
 import sys
 import logging
 import pkg_resources
-from Bio import SeqIO
+import pysam
+import csv
 
 
 EXIT_FILE_IO_ERROR = 1
 EXIT_COMMAND_LINE_ERROR = 2
-EXIT_FASTA_FILE_ERROR = 3
-DEFAULT_MIN_LEN = 0
-DEFAULT_VERBOSE = False
-HEADER = 'FILENAME\tNUMSEQ\tTOTAL\tMIN\tAVG\tMAX'
 PROGRAM_NAME = "snvly"
 
 
@@ -55,12 +49,9 @@ def parse_args():
     description = 'Read one or more FASTA files, compute simple stats for each file'
     parser = ArgumentParser(description=description)
     parser.add_argument(
-        '--minlen',
-        metavar='N',
-        type=int,
-        default=DEFAULT_MIN_LEN,
-        help='Minimum length sequence to include in stats (default {})'.format(
-            DEFAULT_MIN_LEN))
+        '--tumour', metavar='BAM', type=str, help='Filepath of tumour BAM file')
+    parser.add_argument(
+        '--normal', metavar='BAM', type=str, help='Filepath of normal BAM file')
     parser.add_argument('--version',
                         action='version',
                         version='%(prog)s ' + PROGRAM_VERSION)
@@ -68,137 +59,8 @@ def parse_args():
                         metavar='LOG_FILE',
                         type=str,
                         help='record program progress in LOG_FILE')
-    parser.add_argument('fasta_files',
-                        nargs='*',
-                        metavar='FASTA_FILE',
-                        type=str,
-                        help='Input FASTA files')
     return parser.parse_args()
 
-
-class FastaStats(object):
-    '''Compute various statistics for a FASTA file:
-
-    num_seqs: the number of sequences in the file satisfying the minimum
-       length requirement (minlen_threshold).
-    num_bases: the total length of all the counted sequences.
-    min_len: the minimum length of the counted sequences.
-    max_len: the maximum length of the counted sequences.
-    average: the average length of the counted sequences rounded down
-       to an integer.
-    '''
-    #pylint: disable=too-many-arguments
-    def __init__(self,
-                 num_seqs=None,
-                 num_bases=None,
-                 min_len=None,
-                 max_len=None,
-                 average=None):
-        "Build an empty FastaStats object"
-        self.num_seqs = num_seqs
-        self.num_bases = num_bases
-        self.min_len = min_len
-        self.max_len = max_len
-        self.average = average
-
-    def __eq__(self, other):
-        "Two FastaStats objects are equal iff their attributes are equal"
-        if type(other) is type(self):
-            return self.__dict__ == other.__dict__
-        return False
-
-    def __repr__(self):
-        "Generate a printable representation of a FastaStats object"
-        return "FastaStats(num_seqs={}, num_bases={}, min_len={}, max_len={}, " \
-            "average={})".format(
-                self.num_seqs, self.num_bases, self.min_len, self.max_len,
-                self.average)
-
-    def from_file(self, fasta_file, minlen_threshold=DEFAULT_MIN_LEN):
-        '''Compute a FastaStats object from an input FASTA file.
-
-        Arguments:
-           fasta_file: an open file object for the FASTA file
-           minlen_threshold: the minimum length sequence to consider in
-              computing the statistics. Sequences in the input FASTA file
-              which have a length less than this value are ignored and not
-              considered in the resulting statistics.
-        Result:
-           A FastaStats object
-        '''
-        num_seqs = num_bases = 0
-        min_len = max_len = None
-        for seq in SeqIO.parse(fasta_file, "fasta"):
-            this_len = len(seq)
-            if this_len >= minlen_threshold:
-                if num_seqs == 0:
-                    min_len = max_len = this_len
-                else:
-                    min_len = min(this_len, min_len)
-                    max_len = max(this_len, max_len)
-                num_seqs += 1
-                num_bases += this_len
-        if num_seqs > 0:
-            self.average = int(floor(float(num_bases) / num_seqs))
-        else:
-            self.average = None
-        self.num_seqs = num_seqs
-        self.num_bases = num_bases
-        self.min_len = min_len
-        self.max_len = max_len
-        return self
-
-    def pretty(self, filename):
-        '''Generate a pretty printable representation of a FastaStats object
-        suitable for output of the program. The output is a tab-delimited
-        string containing the filename of the input FASTA file followed by
-        the attributes of the object. If 0 sequences were read from the FASTA
-        file then num_seqs and num_bases are output as 0, and min_len, average
-        and max_len are output as a dash "-".
-
-        Arguments:
-           filename: the name of the input FASTA file
-        Result:
-           A string suitable for pretty printed output
-        '''
-        if self.num_seqs > 0:
-            num_seqs = str(self.num_seqs)
-            num_bases = str(self.num_bases)
-            min_len = str(self.min_len)
-            average = str(self.average)
-            max_len = str(self.max_len)
-        else:
-            num_seqs = num_bases = "0"
-            min_len = average = max_len = "-"
-        return "\t".join([filename, num_seqs, num_bases, min_len, average,
-                          max_len])
-
-
-def process_files(options):
-    '''Compute and print FastaStats for each input FASTA file specified on the
-    command line. If no FASTA files are specified on the command line then
-    read from the standard input (stdin).
-
-    Arguments:
-       options: the command line options of the program
-    Result:
-       None
-    '''
-    if options.fasta_files:
-        for fasta_filename in options.fasta_files:
-            logging.info("Processing FASTA file from %s", fasta_filename)
-            try:
-                fasta_file = open(fasta_filename)
-            except IOError as exception:
-                exit_with_error(str(exception), EXIT_FILE_IO_ERROR)
-            else:
-                with fasta_file:
-                    stats = FastaStats().from_file(fasta_file, options.minlen)
-                    print(stats.pretty(fasta_filename))
-    else:
-        logging.info("Processing FASTA file from stdin")
-        stats = FastaStats().from_file(sys.stdin, options.minlen)
-        print(stats.pretty("stdin"))
 
 
 def init_logging(log_filename):
@@ -223,12 +85,141 @@ def init_logging(log_filename):
         logging.info('command line: %s', ' '.join(sys.argv))
 
 
+class Counts(object):
+    def __init__(self):
+        self.A = 0
+        self.T = 0
+        self.G = 0
+        self.C = 0
+
+    def increment_base_count(self, base):
+        if base == 'A':
+            self.A += 1
+        elif base == 'T':
+            self.T += 1
+        elif base == 'G':
+            self.G += 1
+        elif base == 'C':
+            self.C += 1
+        else:
+            exit(f"Unrecognised base: {base}")
+
+    def get_count(self, base):
+        if base == 'A':
+            return self.A
+        elif base == 'T':
+            return self.T
+        elif base == 'G':
+            return self.G
+        elif base == 'C':
+            return self.C
+
+    def __str__(self):
+        return f"A:{self.A}, T:{self.T}, G:{self.G}, C:{self.C}"
+
+
+def get_variants():
+    result = set()
+    for line in sys.stdin:
+        if line.startswith('#'):
+            continue
+        fields = line.strip().split()
+        if len(fields) >= 5:
+            chrom, pos, _id, ref, alt = fields[:5]
+            pos = int(pos)
+            result.add((chrom, pos, ref, alt))
+    return result
+
+header = ["chrom", "pos", "ref", "alt",
+           "tumour depth", "tumour A", "tumour T", "tumour G", "tumour C", "tumour ref count", "tumour alt count", "tumour avg nm", "tumour avg base qual", "tumour avg map qual", "tumour avg align len",
+           "normal depth", "normal A", "normal T", "normal G", "normal C", "normal ref count", "normal alt count", "normal avg nm", "normal avg base qual", "normal avg map qual", "normal avg align len"]
+
+          
+
+def process_variants_bams(variants, tumour_filepath, normal_filepath):
+    tumour_data = process_bam(variants, tumour_filepath)
+    normal_data = process_bam(variants, normal_filepath)
+    writer = csv.DictWriter(sys.stdout, fieldnames=header)
+    writer.writeheader()
+    for variant in sorted(variants):
+        chrom, pos, ref, alt = variant
+        this_tumour = tumour_data[variant]
+        this_normal = normal_data[variant]
+        row = {"chrom": chrom, "pos": pos, "ref": ref, "alt": alt,
+               "tumour depth": this_tumour["depth"], "tumour A": this_tumour["A"],
+               "tumour T": this_tumour["T"], "tumour G": this_tumour["G"],
+               "tumour C": this_tumour["C"], "tumour ref count": this_tumour["ref count"],
+               "tumour alt count": this_tumour["alt count"],
+               "tumour avg nm": this_tumour["avg nm"], "tumour avg base qual": this_tumour["avg base qual"],
+               "tumour avg map qual": this_tumour["avg map qual"], "tumour avg align len": this_tumour["avg align len"],
+               "normal depth": this_normal["depth"], "normal A": this_normal["A"],
+               "normal T": this_normal["T"], "normal G": this_normal["G"],
+               "normal C": this_normal["C"], "normal ref count": this_normal["ref count"],
+               "normal alt count": this_normal["alt count"],
+               "normal avg nm": this_normal["avg nm"], "normal avg base qual": this_normal["avg base qual"],
+               "normal avg map qual": this_normal["avg map qual"], "normal avg align len": this_normal["avg align len"]}
+        writer.writerow(row)
+ 
+
+VALID_DNA_BASES = "ATGC"
+
+def process_bam(variants, filepath):
+    result = {}
+    samfile = pysam.AlignmentFile(filepath, "rb")
+    for (chrom, pos, ref, alt) in variants:
+        zero_based_pos = pos - 1
+        counts = Counts()
+        coverage = 0
+        num_considered_reads = 0
+        this_nm = 0
+        this_base_qual = 0
+        this_map_qual = 0
+        this_align_len = 0
+        for pileupcolumn in samfile.pileup(chrom, zero_based_pos, zero_based_pos+1, truncate=True, stepper='samtools',
+                                           ignore_overlaps=False, ignore_orphans=True,
+                                           max_depth=1000000000): 
+            coverage = pileupcolumn.nsegments
+            for pileupread in pileupcolumn.pileups:
+                this_alignment = pileupread.alignment
+                mapping_quality = this_alignment.mapping_quality 
+                alignment_length = this_alignment.query_alignment_length
+                nm_count = 0
+                cigar_stats = this_alignment.get_cigar_stats()[0]
+                if len(cigar_stats) == 11:
+                    nm_count = cigar_stats[10]
+                if not pileupread.is_del and not pileupread.is_refskip:
+                    this_base = pileupread.alignment.query_sequence[pileupread.query_position].upper()
+                    base_qual = pileupread.alignment.query_qualities[pileupread.query_position]
+                    if this_base in VALID_DNA_BASES:
+                        num_considered_reads += 1
+                        this_nm += nm_count
+                        this_base_qual += base_qual
+                        this_map_qual += mapping_quality 
+                        this_align_len += alignment_length
+                        counts.increment_base_count(this_base)
+        alt_count = counts.get_count(alt)
+        ref_count = counts.get_count(ref)
+        average_nm = this_nm / num_considered_reads
+        average_base_qual = this_base_qual / num_considered_reads
+        average_map_qual = this_map_qual / num_considered_reads
+        average_align_len = this_align_len / num_considered_reads
+        result[(chrom, pos, ref, alt)] = {"depth": coverage, "A": counts.A, "T": counts.T,
+                                          "G": counts.G, "C": counts.C, "ref count": ref_count,
+                                          "alt count": alt_count,
+                                          "avg nm": average_nm,
+                                          "avg base qual": average_base_qual,
+                                          "avg map qual": average_map_qual,
+                                          "avge align len": average_align_len}
+    return result
+
+
+
 def main():
     "Orchestrate the execution of the program"
     options = parse_args()
     init_logging(options.log)
-    print(HEADER)
-    process_files(options)
+    variants = get_variants()
+    process_variants_bams(variants, options.tumour, options.normal)
 
 
 # If this script is run from the command line then call the main function.

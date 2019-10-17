@@ -3,12 +3,14 @@
 from distutils.core import setup
 
 LONG_DESCRIPTION = \
-'''The program reads one or more input FASTA files.
-For each file it computes a variety of statistics, and then
-prints a summary of the statistics as output.
-
-The goal is to provide a solid foundation for new bioinformatics command line tools,
-and is an ideal starting place for new projects.'''
+'''
+Read a VCF file of somatic variants and check
+their pileup in the corresponding BAM file for the
+same donor. The purpose is to see how well supported
+a somatic SNV is or isn't supported by the germline
+evidence. This might be useful for ruling out
+false positives.
+'''
 
 
 setup(
@@ -23,7 +25,7 @@ setup(
     },
     url='https://github.com/bjpop/snvly',
     license='LICENSE',
-    description=('A prototypical bioinformatics command line tool'),
+    description=('Check somatic SNVs against their germline support'),
     long_description=(LONG_DESCRIPTION),
-    install_requires=["biopython"],
+    install_requires=["pysam"],
 )
