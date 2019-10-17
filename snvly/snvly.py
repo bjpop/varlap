@@ -209,7 +209,7 @@ def process_bam(variants, filepath):
                                           "avg nm": average_nm,
                                           "avg base qual": average_base_qual,
                                           "avg map qual": average_map_qual,
-                                          "avge align len": average_align_len}
+                                          "avg align len": average_align_len}
     return result
 
 
