@@ -53,6 +53,8 @@ def parse_args():
         '--normal', metavar='BAM', type=str, help='Filepath of normal BAM file')
     parser.add_argument(
         '--sample', required=True, metavar='SAMPLE', type=str, help='Sample identifier')
+    parser.add_argument(
+        '--noheader', action='store_true', help='Suppress output header row')
     parser.add_argument('--version',
                         action='version',
                         version='%(prog)s ' + PROGRAM_VERSION)
@@ -129,20 +131,21 @@ def get_variants():
             chrom, pos, _id, ref, alt = fields[:5]
             pos = int(pos)
             result.add((chrom, pos, ref, alt))
-    return result
+    return sorted(result)
+
 
 header = ["chrom", "pos", "ref", "alt", "sample",
            "tumour depth", "tumour A", "tumour T", "tumour G", "tumour C", "tumour ref count", "tumour alt count", "tumour avg nm", "tumour avg base qual", "tumour avg map qual", "tumour avg align len",
            "normal depth", "normal A", "normal T", "normal G", "normal C", "normal ref count", "normal alt count", "normal avg nm", "normal avg base qual", "normal avg map qual", "normal avg align len"]
 
-          
 
 def process_variants_bams(variants, options):
     tumour_data = process_bam(variants, options.tumour)
     normal_data = process_bam(variants, options.normal)
     writer = csv.DictWriter(sys.stdout, fieldnames=header)
-    writer.writeheader()
-    for variant in sorted(variants):
+    if not options.noheader:
+        writer.writeheader()
+    for variant in variants:
         chrom, pos, ref, alt = variant
         this_tumour = tumour_data[variant]
         this_normal = normal_data[variant]
@@ -225,6 +228,7 @@ def main():
     "Orchestrate the execution of the program"
     options = parse_args()
     init_logging(options.log)
+    # variants are sorted
     variants = get_variants()
     process_variants_bams(variants, options)
 
