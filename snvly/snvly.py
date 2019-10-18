@@ -199,10 +199,16 @@ def process_bam(variants, filepath):
                         counts.increment_base_count(this_base)
         alt_count = counts.get_count(alt)
         ref_count = counts.get_count(ref)
-        average_nm = this_nm / num_considered_reads
-        average_base_qual = this_base_qual / num_considered_reads
-        average_map_qual = this_map_qual / num_considered_reads
-        average_align_len = this_align_len / num_considered_reads
+        if num_considered_reads > 0:
+            average_nm = this_nm / num_considered_reads
+            average_base_qual = this_base_qual / num_considered_reads
+            average_map_qual = this_map_qual / num_considered_reads
+            average_align_len = this_align_len / num_considered_reads
+        else:
+            average_nm = ''
+            average_base_qual = ''
+            average_map_qual = ''
+            average_align_len = ''
         result[(chrom, pos, ref, alt)] = {"depth": coverage, "A": counts.A, "T": counts.T,
                                           "G": counts.G, "C": counts.C, "ref count": ref_count,
                                           "alt count": alt_count,
