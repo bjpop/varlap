@@ -12,6 +12,8 @@ These are some examples of the kinds of information collected per variant:
 * Number of mismatches in overlapping reads (NM, "edit distance").
 * Alignment length of overlapping reads.
 * Counts of DNA bases at locus of variant.
+* Number of INDELs in overlapping reads.
+* Number of clipped bases in overlapping reads.
 
 In the examples below, `$` indicates the command line prompt.
 
