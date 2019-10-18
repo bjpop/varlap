@@ -1,5 +1,18 @@
 # Overview 
 
+Snvly is designed to compute various bits of information about somatic SNVs from corresponding tumour and normal BAM files.
+
+It is particularly intended for quality control checking of somatic SNVs. For example, you can use the output of snvly
+to check for outliers in the data that might be indicative of errors. Therefore, many of the bits of information collected
+by snvly are often signs of things going wrong in the sequencing and alignment.
+
+These are some examples of the kinds of information collected per variant:
+* Base quality.
+* Mapping quality of overlapping reads.
+* Number of mismatches in overlapping reads (NM, "edit distance").
+* Alignment length of overlapping reads.
+* Counts of DNA bases at locus of variant.
+
 In the examples below, `$` indicates the command line prompt.
 
 # Licence
@@ -41,10 +54,11 @@ $ pip install -U --user /path/to/snvly
 
 Get help:
 ```
-snvly -h
+$ snvly -h
 usage: snvly [-h] [--tumour BAM] [--normal BAM] [--version] [--log LOG_FILE]
 
-Read one or more FASTA files, compute simple stats for each file
+Compute various bits of information about somatic variants in tumour and
+normal BAM files
 
 optional arguments:
   -h, --help      show this help message and exit
@@ -52,7 +66,6 @@ optional arguments:
   --normal BAM    Filepath of normal BAM file
   --version       show program's version number and exit
   --log LOG_FILE  record program progress in LOG_FILE
-
 ```
 
 Run on a somatic VCF file supplying tumour and normal bams for the same donor:

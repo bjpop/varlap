@@ -46,7 +46,7 @@ def parse_args():
     Returns Options object with command line argument values as attributes.
     Will exit the program on a command line error.
     '''
-    description = 'Read one or more FASTA files, compute simple stats for each file'
+    description = 'Compute various bits of information about somatic variants in tumour and normal BAM files'
     parser = ArgumentParser(description=description)
     parser.add_argument(
         '--tumour', metavar='BAM', type=str, help='Filepath of tumour BAM file')
