@@ -94,6 +94,7 @@ class Counts(object):
         self.T = 0
         self.G = 0
         self.C = 0
+        self.N = 0
 
     def increment_base_count(self, base):
         if base == 'A':
@@ -104,6 +105,8 @@ class Counts(object):
             self.G += 1
         elif base == 'C':
             self.C += 1
+        elif base == 'N':
+            self.N += 1
         else:
             exit(f"Unrecognised base: {base}")
 
@@ -116,9 +119,13 @@ class Counts(object):
             return self.G
         elif base == 'C':
             return self.C
+        elif base == 'N':
+            return self.N
+        else:
+            exit(f"Unrecognised base: {base}")
 
     def __str__(self):
-        return f"A:{self.A}, T:{self.T}, G:{self.G}, C:{self.C}"
+        return f"A:{self.A}, T:{self.T}, G:{self.G}, C:{self.C}, N:{self.N}"
 
 
 def get_variants():
@@ -135,7 +142,7 @@ def get_variants():
 
 
 header_general = ["chrom", "pos", "ref", "alt", "sample"]
-header_bam = ["depth", "A", "T", "G", "C", "ref count", "alt count", "avg NM", "avg base qual", "avg map qual", "avg align len"]
+header_bam = ["depth", "A", "T", "G", "C", "N", "ref count", "alt count", "alt VAF", "avg NM", "avg base qual", "avg map qual", "avg align len"]
 header_bam_tumour = ["tumour " + h for h in header_bam]
 header_bam_normal = ["normal " + h for h in header_bam]
 header = header_general + header_bam_tumour + header_bam_normal
@@ -158,7 +165,7 @@ def process_variants_bams(variants, options):
         writer.writerow(row)
  
 
-VALID_DNA_BASES = "ATGC"
+VALID_DNA_BASES = "ATGCN"
 
 def process_bam(variants, filepath):
     result = {}
@@ -201,19 +208,23 @@ def process_bam(variants, filepath):
             average_base_qual = this_base_qual / num_considered_reads
             average_map_qual = this_map_qual / num_considered_reads
             average_align_len = this_align_len / num_considered_reads
+            alt_vaf = alt_count / num_considered_reads 
         else:
             average_nm = ''
             average_base_qual = ''
             average_map_qual = ''
             average_align_len = ''
+            alt_vaf = ''
         result[(chrom, pos, ref, alt)] = {
-            "depth": coverage,
+            "depth": num_considered_reads,
             "A": counts.A,
             "T": counts.T,
             "G": counts.G,
             "C": counts.C,
+            "N": counts.N,
             "ref count": ref_count,
             "alt count": alt_count,
+            "alt VAF": alt_vaf,
             "avg NM": average_nm,
             "avg base qual": average_base_qual,
             "avg map qual": average_map_qual,
