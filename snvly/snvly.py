@@ -5,7 +5,6 @@ Copyright   : (c) Bernie Pope, 16 Oct 2019
 License     : MIT 
 Maintainer  : bjpope@unimelb.edu.au 
 Portability : POSIX
-
 '''
 
 from argparse import ArgumentParser
@@ -52,6 +51,8 @@ def parse_args():
         '--tumour', metavar='BAM', type=str, help='Filepath of tumour BAM file')
     parser.add_argument(
         '--normal', metavar='BAM', type=str, help='Filepath of normal BAM file')
+    parser.add_argument(
+        '--sample', required=True, metavar='SAMPLE', type=str, help='Sample identifier')
     parser.add_argument('--version',
                         action='version',
                         version='%(prog)s ' + PROGRAM_VERSION)
@@ -130,22 +131,22 @@ def get_variants():
             result.add((chrom, pos, ref, alt))
     return result
 
-header = ["chrom", "pos", "ref", "alt",
+header = ["chrom", "pos", "ref", "alt", "sample",
            "tumour depth", "tumour A", "tumour T", "tumour G", "tumour C", "tumour ref count", "tumour alt count", "tumour avg nm", "tumour avg base qual", "tumour avg map qual", "tumour avg align len",
            "normal depth", "normal A", "normal T", "normal G", "normal C", "normal ref count", "normal alt count", "normal avg nm", "normal avg base qual", "normal avg map qual", "normal avg align len"]
 
           
 
-def process_variants_bams(variants, tumour_filepath, normal_filepath):
-    tumour_data = process_bam(variants, tumour_filepath)
-    normal_data = process_bam(variants, normal_filepath)
+def process_variants_bams(variants, options):
+    tumour_data = process_bam(variants, options.tumour)
+    normal_data = process_bam(variants, options.normal)
     writer = csv.DictWriter(sys.stdout, fieldnames=header)
     writer.writeheader()
     for variant in sorted(variants):
         chrom, pos, ref, alt = variant
         this_tumour = tumour_data[variant]
         this_normal = normal_data[variant]
-        row = {"chrom": chrom, "pos": pos, "ref": ref, "alt": alt,
+        row = {"chrom": chrom, "pos": pos, "ref": ref, "alt": alt, "sample": options.sample,
                "tumour depth": this_tumour["depth"], "tumour A": this_tumour["A"],
                "tumour T": this_tumour["T"], "tumour G": this_tumour["G"],
                "tumour C": this_tumour["C"], "tumour ref count": this_tumour["ref count"],
@@ -225,7 +226,7 @@ def main():
     options = parse_args()
     init_logging(options.log)
     variants = get_variants()
-    process_variants_bams(variants, options.tumour, options.normal)
+    process_variants_bams(variants, options)
 
 
 # If this script is run from the command line then call the main function.

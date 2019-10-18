@@ -55,27 +55,30 @@ $ pip install -U --user /path/to/snvly
 Get help:
 ```
 $ snvly -h
-usage: snvly [-h] [--tumour BAM] [--normal BAM] [--version] [--log LOG_FILE]
+usage: snvly [-h] [--tumour BAM] [--normal BAM] --sample SAMPLE [--version]
+             [--log LOG_FILE]
 
 Compute various bits of information about somatic variants in tumour and
 normal BAM files
 
 optional arguments:
-  -h, --help      show this help message and exit
-  --tumour BAM    Filepath of tumour BAM file
-  --normal BAM    Filepath of normal BAM file
-  --version       show program's version number and exit
-  --log LOG_FILE  record program progress in LOG_FILE
+  -h, --help       show this help message and exit
+  --tumour BAM     Filepath of tumour BAM file
+  --normal BAM     Filepath of normal BAM file
+  --sample SAMPLE  Sample identifier
+  --version        show program's version number and exit
+  --log LOG_FILE   record program progress in LOG_FILE
+
 ```
 
 Run on a somatic VCF file supplying tumour and normal bams for the same donor:
 ```
-snvly --tumour sample.tumour.bam --normal sample.normal.bam < sample.vcf
+snvly --sample sample_id --tumour tumour.bam --normal normal.bam < variants.vcf
 ```
 
 Or from a compressed VCF file:
 ```
-zcat sample.vcf.gz | snvly --tumour sample.tumour.bam --normal sample.normal.bam
+zcat variants.vcf.gz | snvly --sample sample_id --tumour tumour.bam --normal normal.bam
 ```
 
 # Bug reporting and feature requests
