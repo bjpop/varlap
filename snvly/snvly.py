@@ -102,7 +102,7 @@ def get_variants():
 
 
 header_general = ["chrom", "pos", "ref", "alt", "sample"]
-header_bam = ["depth", "A", "T", "G", "C", "N", "ref count", "alt count", "alt VAF", "avg NM", "avg base qual", "avg map qual", "avg align len"]
+header_bam = ["depth", "A", "T", "G", "C", "N", "ref count", "alt count", "alt VAF", "avg NM", "avg INDEL", "avg clipping", "avg base qual", "avg map qual", "avg align len"]
 header_bam_tumour = ["tumour " + h for h in header_bam]
 header_bam_normal = ["normal " + h for h in header_bam]
 header = header_general + header_bam_tumour + header_bam_normal
@@ -133,14 +133,20 @@ class Features(object):
         self.base_qual_sum = 0
         self.map_qual_sum = 0
         self.align_len_sum = 0
+        self.clipping_sum = 0
+        self.indel_sum = 0
         self.base_counts = { base: 0 for base in VALID_DNA_BASES }
 
+    # See: https://pysam.readthedocs.io/en/latest/api.html#pysam.AlignedSegment.get_cigar_stats
     def alignment_features(self, alignment):
         self.map_qual_sum += alignment.mapping_quality 
         self.align_len_sum += alignment.query_alignment_length
         cigar_stats = alignment.get_cigar_stats()[0]
         if len(cigar_stats) == 11:
             self.nm_sum += cigar_stats[10]
+            # count soft and hard clips together
+            self.clipping_sum += cigar_stats[4] + cigar_stats[5]
+            self.indel_sum += cigar_stats[1] + cigar_stats[2]
 
     def base_features(self, read):
         base = read.alignment.query_sequence[read.query_position].upper()
@@ -176,12 +182,10 @@ def process_bam(variants, filepath):
             average_map_qual = features.map_qual_sum / num_considered_reads
             average_align_len = features.align_len_sum / num_considered_reads
             alt_vaf = alt_count / num_considered_reads 
+            average_clipping = features.clipping_sum / num_considered_reads
+            average_indels = features.indel_sum / num_considered_reads
         else:
-            average_nm = ''
-            average_base_qual = ''
-            average_map_qual = ''
-            average_align_len = ''
-            alt_vaf = ''
+            average_nm = average_base_qual = average_map_qual = average_align_len = alt_vaf = average_clipping = average_indels = ''
         result[(chrom, pos, ref, alt)] = {
             "depth": num_considered_reads,
             "A": features.base_counts['A'],
@@ -195,7 +199,9 @@ def process_bam(variants, filepath):
             "avg NM": average_nm,
             "avg base qual": average_base_qual,
             "avg map qual": average_map_qual,
-            "avg align len": average_align_len}
+            "avg align len": average_align_len,
+            "avg clipping": average_clipping,
+            "avg INDEL": average_indels }
     return result
 
 
