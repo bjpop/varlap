@@ -88,46 +88,6 @@ def init_logging(log_filename):
         logging.info('command line: %s', ' '.join(sys.argv))
 
 
-class Counts(object):
-    def __init__(self):
-        self.A = 0
-        self.T = 0
-        self.G = 0
-        self.C = 0
-        self.N = 0
-
-    def increment_base_count(self, base):
-        if base == 'A':
-            self.A += 1
-        elif base == 'T':
-            self.T += 1
-        elif base == 'G':
-            self.G += 1
-        elif base == 'C':
-            self.C += 1
-        elif base == 'N':
-            self.N += 1
-        else:
-            exit(f"Unrecognised base: {base}")
-
-    def get_count(self, base):
-        if base == 'A':
-            return self.A
-        elif base == 'T':
-            return self.T
-        elif base == 'G':
-            return self.G
-        elif base == 'C':
-            return self.C
-        elif base == 'N':
-            return self.N
-        else:
-            exit(f"Unrecognised base: {base}")
-
-    def __str__(self):
-        return f"A:{self.A}, T:{self.T}, G:{self.G}, C:{self.C}, N:{self.N}"
-
-
 def get_variants():
     result = set()
     for line in sys.stdin:
@@ -167,47 +127,54 @@ def process_variants_bams(variants, options):
 
 VALID_DNA_BASES = "ATGCN"
 
+class Features(object):
+    def __init__(self):
+        self.nm_sum = 0
+        self.base_qual_sum = 0
+        self.map_qual_sum = 0
+        self.align_len_sum = 0
+        self.base_counts = { base: 0 for base in VALID_DNA_BASES }
+
+    def alignment_features(self, alignment):
+        self.map_qual_sum += alignment.mapping_quality 
+        self.align_len_sum += alignment.query_alignment_length
+        cigar_stats = alignment.get_cigar_stats()[0]
+        if len(cigar_stats) == 11:
+            self.nm_sum += cigar_stats[10]
+
+    def base_features(self, read):
+        base = read.alignment.query_sequence[read.query_position].upper()
+        if base in VALID_DNA_BASES:
+            self.base_counts[base] += 1
+        else:
+            exit(f"Unrecognised base: {base}")
+        self.base_qual_sum += read.alignment.query_qualities[read.query_position]
+
+
 def process_bam(variants, filepath):
     result = {}
     samfile = pysam.AlignmentFile(filepath, "rb")
     for (chrom, pos, ref, alt) in variants:
         zero_based_pos = pos - 1
-        counts = Counts()
-        coverage = 0
+        features = Features()
         num_considered_reads = 0
-        this_nm = 0
-        this_base_qual = 0
-        this_map_qual = 0
-        this_align_len = 0
-        for pileupcolumn in samfile.pileup(chrom, zero_based_pos, zero_based_pos+1, truncate=True, stepper='samtools',
-                                           ignore_overlaps=False, ignore_orphans=True,
-                                           max_depth=1000000000): 
-            coverage = pileupcolumn.nsegments
+        for pileupcolumn in samfile.pileup(chrom, zero_based_pos, zero_based_pos+1,
+                truncate=True, stepper='samtools',
+                ignore_overlaps=False, ignore_orphans=True,
+                max_depth=1000000000): 
             for pileupread in pileupcolumn.pileups:
-                this_alignment = pileupread.alignment
-                mapping_quality = this_alignment.mapping_quality 
-                alignment_length = this_alignment.query_alignment_length
-                nm_count = 0
-                cigar_stats = this_alignment.get_cigar_stats()[0]
-                if len(cigar_stats) == 11:
-                    nm_count = cigar_stats[10]
                 if not pileupread.is_del and not pileupread.is_refskip:
-                    this_base = pileupread.alignment.query_sequence[pileupread.query_position].upper()
-                    base_qual = pileupread.alignment.query_qualities[pileupread.query_position]
-                    if this_base in VALID_DNA_BASES:
-                        num_considered_reads += 1
-                        this_nm += nm_count
-                        this_base_qual += base_qual
-                        this_map_qual += mapping_quality 
-                        this_align_len += alignment_length
-                        counts.increment_base_count(this_base)
-        alt_count = counts.get_count(alt)
-        ref_count = counts.get_count(ref)
+                    this_alignment = pileupread.alignment
+                    num_considered_reads += 1
+                    features.alignment_features(this_alignment)
+                    features.base_features(pileupread)
+        alt_count = features.base_counts[alt]
+        ref_count = features.base_counts[ref]
         if num_considered_reads > 0:
-            average_nm = this_nm / num_considered_reads
-            average_base_qual = this_base_qual / num_considered_reads
-            average_map_qual = this_map_qual / num_considered_reads
-            average_align_len = this_align_len / num_considered_reads
+            average_nm = features.nm_sum / num_considered_reads
+            average_base_qual = features.base_qual_sum / num_considered_reads
+            average_map_qual = features.map_qual_sum / num_considered_reads
+            average_align_len = features.align_len_sum / num_considered_reads
             alt_vaf = alt_count / num_considered_reads 
         else:
             average_nm = ''
@@ -217,11 +184,11 @@ def process_bam(variants, filepath):
             alt_vaf = ''
         result[(chrom, pos, ref, alt)] = {
             "depth": num_considered_reads,
-            "A": counts.A,
-            "T": counts.T,
-            "G": counts.G,
-            "C": counts.C,
-            "N": counts.N,
+            "A": features.base_counts['A'],
+            "T": features.base_counts['T'], 
+            "G": features.base_counts['G'], 
+            "C": features.base_counts['C'], 
+            "N": features.base_counts['N'], 
             "ref count": ref_count,
             "alt count": alt_count,
             "alt VAF": alt_vaf,
