@@ -134,9 +134,11 @@ def get_variants():
     return sorted(result)
 
 
-header = ["chrom", "pos", "ref", "alt", "sample",
-           "tumour depth", "tumour A", "tumour T", "tumour G", "tumour C", "tumour ref count", "tumour alt count", "tumour avg nm", "tumour avg base qual", "tumour avg map qual", "tumour avg align len",
-           "normal depth", "normal A", "normal T", "normal G", "normal C", "normal ref count", "normal alt count", "normal avg nm", "normal avg base qual", "normal avg map qual", "normal avg align len"]
+header_general = ["chrom", "pos", "ref", "alt", "sample"]
+header_bam = ["depth", "A", "T", "G", "C", "ref count", "alt count", "avg NM", "avg base qual", "avg map qual", "avg align len"]
+header_bam_tumour = ["tumour " + h for h in header_bam]
+header_bam_normal = ["normal " + h for h in header_bam]
+header = header_general + header_bam_tumour + header_bam_normal
 
 
 def process_variants_bams(variants, options):
@@ -149,19 +151,10 @@ def process_variants_bams(variants, options):
         chrom, pos, ref, alt = variant
         this_tumour = tumour_data[variant]
         this_normal = normal_data[variant]
-        row = {"chrom": chrom, "pos": pos, "ref": ref, "alt": alt, "sample": options.sample,
-               "tumour depth": this_tumour["depth"], "tumour A": this_tumour["A"],
-               "tumour T": this_tumour["T"], "tumour G": this_tumour["G"],
-               "tumour C": this_tumour["C"], "tumour ref count": this_tumour["ref count"],
-               "tumour alt count": this_tumour["alt count"],
-               "tumour avg nm": this_tumour["avg nm"], "tumour avg base qual": this_tumour["avg base qual"],
-               "tumour avg map qual": this_tumour["avg map qual"], "tumour avg align len": this_tumour["avg align len"],
-               "normal depth": this_normal["depth"], "normal A": this_normal["A"],
-               "normal T": this_normal["T"], "normal G": this_normal["G"],
-               "normal C": this_normal["C"], "normal ref count": this_normal["ref count"],
-               "normal alt count": this_normal["alt count"],
-               "normal avg nm": this_normal["avg nm"], "normal avg base qual": this_normal["avg base qual"],
-               "normal avg map qual": this_normal["avg map qual"], "normal avg align len": this_normal["avg align len"]}
+        row_general = [("chrom", chrom), ("pos", pos), ("ref", ref), ("alt", alt), ("sample", options.sample)]
+        row_tumour = [("tumour " + h, this_tumour[h]) for h in header_bam]
+        row_normal = [("normal " + h, this_normal[h]) for h in header_bam] 
+        row = dict(row_general + row_tumour + row_normal)
         writer.writerow(row)
  
 
@@ -213,13 +206,18 @@ def process_bam(variants, filepath):
             average_base_qual = ''
             average_map_qual = ''
             average_align_len = ''
-        result[(chrom, pos, ref, alt)] = {"depth": coverage, "A": counts.A, "T": counts.T,
-                                          "G": counts.G, "C": counts.C, "ref count": ref_count,
-                                          "alt count": alt_count,
-                                          "avg nm": average_nm,
-                                          "avg base qual": average_base_qual,
-                                          "avg map qual": average_map_qual,
-                                          "avg align len": average_align_len}
+        result[(chrom, pos, ref, alt)] = {
+            "depth": coverage,
+            "A": counts.A,
+            "T": counts.T,
+            "G": counts.G,
+            "C": counts.C,
+            "ref count": ref_count,
+            "alt count": alt_count,
+            "avg NM": average_nm,
+            "avg base qual": average_base_qual,
+            "avg map qual": average_map_qual,
+            "avg align len": average_align_len}
     return result
 
 
