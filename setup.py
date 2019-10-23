@@ -27,5 +27,5 @@ setup(
     license='LICENSE',
     description=('Check somatic SNVs against their germline support'),
     long_description=(LONG_DESCRIPTION),
-    install_requires=["pysam"],
+    install_requires=["pysam", "intervaltree"],
 )

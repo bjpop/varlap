@@ -13,6 +13,8 @@ import logging
 import pkg_resources
 import pysam
 import csv
+from intervaltree import Interval, IntervalTree
+import os.path
 
 
 EXIT_FILE_IO_ERROR = 1
@@ -53,6 +55,8 @@ def parse_args():
         '--normal', metavar='BAM', type=str, help='Filepath of normal BAM file')
     parser.add_argument(
         '--sample', required=True, metavar='SAMPLE', type=str, help='Sample identifier')
+    parser.add_argument(
+        '--regions', required=False, metavar='REGIONS', type=str, help='Filepath of genomic regions-of-interest in BED format')
     parser.add_argument(
         '--noheader', action='store_true', help='Suppress output header row')
     parser.add_argument('--version',
@@ -101,27 +105,46 @@ def get_variants():
     return sorted(result)
 
 
-header_general = ["chrom", "pos", "ref", "alt", "sample"]
-header_bam = ["depth", "A", "T", "G", "C", "N", "ref count", "alt count", "alt VAF", "avg NM", "avg INDEL", "avg clipping", "avg base qual", "avg map qual", "avg align len"]
-header_bam_tumour = ["tumour " + h for h in header_bam]
-header_bam_normal = ["normal " + h for h in header_bam]
-header = header_general + header_bam_tumour + header_bam_normal
+
+def make_output_headers(regions):
+    header_general = ["chrom", "pos", "ref", "alt", "sample"]
+    header_bam = ["depth", "A", "T", "G", "C", "N", "ref count", "alt count", "alt VAF", "avg NM", "avg INDEL", "avg clipping", "avg base qual", "avg map qual", "avg align len"]
+    header_tumour = ["tumour " + h for h in header_bam]
+    header_normal = ["normal " + h for h in header_bam]
+    header_regions = []
+    if regions is not None:
+        header_regions = sorted(regions.region_labels)
+    return header_general, header_regions, header_bam, header_tumour,  header_normal
 
 
-def process_variants_bams(variants, options):
-    tumour_data = process_bam(variants, options.tumour)
-    normal_data = process_bam(variants, options.normal)
-    writer = csv.DictWriter(sys.stdout, fieldnames=header)
+def get_variant_region_intersections(regions, chrom, pos):
+    result = {}
+    if regions is not None:
+        for label in regions.region_labels:
+            result[label] = False 
+        for _start, _end, overlapped_label in regions.get_overlapping_regions(chrom, pos, pos+1):
+            result[overlapped_label] = True 
+    return result
+ 
+
+def process_variants_bams(options, regions, variants):
+    tumour_data = process_bam(options.tumour, variants)
+    normal_data = process_bam(options.normal, variants)
+    header_general, header_regions, header_bam, header_tumour, header_normal = make_output_headers(regions)
+    output_header = header_general + header_regions + header_tumour + header_normal
+    writer = csv.DictWriter(sys.stdout, fieldnames=output_header)
     if not options.noheader:
         writer.writeheader()
     for variant in variants:
         chrom, pos, ref, alt = variant
+        variant_region_counts = get_variant_region_intersections(regions, chrom, pos)
         this_tumour = tumour_data[variant]
         this_normal = normal_data[variant]
         row_general = [("chrom", chrom), ("pos", pos), ("ref", ref), ("alt", alt), ("sample", options.sample)]
+        row_regions = list(variant_region_counts.items())
         row_tumour = [("tumour " + h, this_tumour[h]) for h in header_bam]
         row_normal = [("normal " + h, this_normal[h]) for h in header_bam] 
-        row = dict(row_general + row_tumour + row_normal)
+        row = dict(row_general + row_regions + row_tumour + row_normal)
         writer.writerow(row)
  
 
@@ -136,6 +159,7 @@ class Features(object):
         self.clipping_sum = 0
         self.indel_sum = 0
         self.base_counts = { base: 0 for base in VALID_DNA_BASES }
+        
 
     # See: https://pysam.readthedocs.io/en/latest/api.html#pysam.AlignedSegment.get_cigar_stats
     def alignment_features(self, alignment):
@@ -148,6 +172,7 @@ class Features(object):
             self.clipping_sum += cigar_stats[4] + cigar_stats[5]
             self.indel_sum += cigar_stats[1] + cigar_stats[2]
 
+
     def base_features(self, read):
         base = read.alignment.query_sequence[read.query_position].upper()
         if base in VALID_DNA_BASES:
@@ -157,9 +182,14 @@ class Features(object):
         self.base_qual_sum += read.alignment.query_qualities[read.query_position]
 
 
-def process_bam(variants, filepath):
+
+
+def process_bam(filepath, variants):
     result = {}
-    samfile = pysam.AlignmentFile(filepath, "rb")
+    logging.info(f"Reading BAM file: {filepath}")
+    resolved_path = os.path.realpath(filepath)
+    logging.info(f"Resolved filepath to: {resolved_path}")
+    samfile = pysam.AlignmentFile(resolved_path, "rb")
     for (chrom, pos, ref, alt) in variants:
         zero_based_pos = pos - 1
         features = Features()
@@ -205,6 +235,66 @@ def process_bam(variants, filepath):
     return result
 
 
+class Regions(object):
+    def __init__(self):
+        self.chrom_regions = {}
+        self.region_labels = set()
+
+    def add_region(self, chrom, one_based_inclusive_start, one_based_exclusive_end, label):
+        if chrom not in self.chrom_regions:
+            self.chrom_regions[chrom] = IntervalTree()
+        self.chrom_regions[chrom][one_based_inclusive_start:one_based_exclusive_end] = label
+        self.region_labels.add(label)
+
+    def get_overlapping_regions(self, chrom, one_based_inclusive_start, one_based_exclusive_end):
+        if chrom in self.chrom_regions:
+            this_regions = self.chrom_regions[chrom]
+            for interval in this_regions[one_based_inclusive_start: one_based_exclusive_end]:
+                start, end, label = interval
+                yield start, end, label
+
+'''
+Regions are represented in BED format as:
+chrom	start	end 	name
+
+where:
+start and end are zero based, and the region is defined by the half-closed interval:
+[start, end)
+
+The result is a dictionary with chromosomes as keys, and interval trees as values, and
+a set of all the region names from the file.
+'''
+NUM_FEATURE_FIELDS = 4
+
+def get_regions(filepath):
+    result = None
+    if filepath is not None:
+        result = Regions()
+        logging.info(f"Reading regions from {filepath}")
+        num_regions = 0
+        with open(filepath) as file:
+            for row in file:
+                if row.startswith("#"):
+                    logging.info(f"Skipping likely header row from regions file: {row.strip()}")
+                    continue
+                else:
+                    fields = row.strip().split()
+                    if len(fields) >= NUM_FEATURE_FIELDS:
+                        try:
+                            chrom, start, end, label = fields[:NUM_FEATURE_FIELDS]
+                            one_based_start = int(start) + 1
+                            one_based_end = int(end) + 1
+                        except:
+                            logging.info(f"Skipping likely malformed (could not parse) region row: {row}")
+                        else:
+                            result.add_region(chrom, one_based_start, one_based_end, label)
+                            num_regions += 1
+                    else:
+                        logging.info(f"Skipping likely malformed (too short) region row: {row}")
+        num_labels = len(result.region_labels)
+        logging.info(f"Read {num_regions} regions with {num_labels} labels")
+    return result
+
 
 def main():
     "Orchestrate the execution of the program"
@@ -212,7 +302,8 @@ def main():
     init_logging(options.log)
     # variants are sorted
     variants = get_variants()
-    process_variants_bams(variants, options)
+    regions = get_regions(options.regions)
+    process_variants_bams(options, regions, variants)
 
 
 # If this script is run from the command line then call the main function.
