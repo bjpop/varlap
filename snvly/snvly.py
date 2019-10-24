@@ -100,139 +100,205 @@ def get_variants():
         fields = line.strip().split()
         if len(fields) >= 5:
             chrom, pos, _id, ref, alt = fields[:5]
-            pos = int(pos)
-            result.add((chrom, pos, ref, alt))
+            if ref in VALID_DNA_BASES and alt in VALID_DNA_BASES:
+                pos = int(pos)
+                result.add((chrom, pos, ref, alt))
+            else:
+                logging.warning(f"Skipping variant: {chrom}:{pos},{ref}>{alt}")
+    logging.info(f"Read {len(result)} variants")
     return sorted(result)
 
 
-
-def make_output_headers(regions):
+def write_header(options, regions):
     header_general = ["chrom", "pos", "ref", "alt", "sample"]
-    header_bam = ["depth", "A", "T", "G", "C", "N", "ref count", "alt count", "alt VAF", "avg NM", "avg INDEL", "avg clipping", "avg base qual", "avg map qual", "avg align len"]
-    header_tumour = ["tumour " + h for h in header_bam]
-    header_normal = ["normal " + h for h in header_bam]
-    header_regions = []
-    if regions is not None:
-        header_regions = sorted(regions.region_labels)
-    return header_general, header_regions, header_bam, header_tumour,  header_normal
+    header_tumour = ["tumour " + f for f in LocusFeatures.fields]
+    header_normal = ["normal " + f for f in LocusFeatures.fields]
+    if not options.noheader:
+        header_regions = []
+        if regions is not None:
+            header_regions = regions.get_labels()
+        header = header_general + header_regions + header_tumour + header_normal
+        print(",".join(header))
 
 
 def get_variant_region_intersections(regions, chrom, pos):
-    result = {}
+    result = []
     if regions is not None:
-        for label in regions.region_labels:
-            result[label] = False 
-        for _start, _end, overlapped_label in regions.get_overlapping_regions(chrom, pos, pos+1):
-            result[overlapped_label] = True 
+        overlaps = {}
+        for _start, _end, label in regions.get_overlapping_regions(chrom, pos, pos+1):
+            overlaps[label] = True
+        for output_label in regions.get_labels():
+            if output_label in overlaps:
+                result.append(str(overlaps[output_label]))
+            else:
+                result.append('False')
     return result
  
 
 def process_variants_bams(options, regions, variants):
-    tumour_data = process_bam(options.tumour, variants)
-    normal_data = process_bam(options.normal, variants)
-    header_general, header_regions, header_bam, header_tumour, header_normal = make_output_headers(regions)
-    output_header = header_general + header_regions + header_tumour + header_normal
-    writer = csv.DictWriter(sys.stdout, fieldnames=output_header)
-    if not options.noheader:
-        writer.writeheader()
-    for variant in variants:
-        chrom, pos, ref, alt = variant
-        variant_region_counts = get_variant_region_intersections(regions, chrom, pos)
-        this_tumour = tumour_data[variant]
-        this_normal = normal_data[variant]
-        row_general = [("chrom", chrom), ("pos", pos), ("ref", ref), ("alt", alt), ("sample", options.sample)]
-        row_regions = list(variant_region_counts.items())
-        row_tumour = [("tumour " + h, this_tumour[h]) for h in header_bam]
-        row_normal = [("normal " + h, this_normal[h]) for h in header_bam] 
-        row = dict(row_general + row_regions + row_tumour + row_normal)
-        writer.writerow(row)
+    tumour_reader = BamReader(options.tumour)
+    normal_reader = BamReader(options.normal)
+    write_header(options, regions)
+    for chrom, pos, ref, alt in variants:
+        region_counts = get_variant_region_intersections(regions, chrom, pos)
+        tumour_features = tumour_reader.variant_features(chrom, pos, ref, alt)
+        normal_features = normal_reader.variant_features(chrom, pos, ref, alt)
+        write_output_row(chrom, pos, ref, alt, options.sample, region_counts, tumour_features, normal_features)
+    tumour_reader.close()
+    normal_reader.close()
+
+
+def write_output_row(chrom, pos, ref, alt, sample, regions, tumour_features, normal_features):
+    row_tumour = [str(x) for x in tumour_features.as_list()]
+    row_normal = [str(x) for x in normal_features.as_list()]
+    row = [chrom, str(pos), ref, alt, sample] + regions + row_tumour + row_normal
+    print(",".join(row))
  
 
 VALID_DNA_BASES = "ATGCN"
 
-class Features(object):
+class ReadFeatures(object):
+
+    fields = ["avg NM", "avg base qual", "avg map qual",
+              "avg align len", "avg clipped bases", "avg indel bases",
+              "fwd strand", "rev strand"]
+
     def __init__(self):
-        self.nm_sum = 0
-        self.base_qual_sum = 0
-        self.map_qual_sum = 0
-        self.align_len_sum = 0
-        self.clipping_sum = 0
-        self.indel_sum = 0
-        self.base_counts = { base: 0 for base in VALID_DNA_BASES }
-        
+        self.nm = 0
+        self.base_qual = 0
+        self.map_qual = 0
+        self.align_len = 0
+        self.clipping = 0
+        self.indel = 0
+        self.forward_strand = 0
+        self.reverse_strand = 0
+        self.num_reads = 0
 
     # See: https://pysam.readthedocs.io/en/latest/api.html#pysam.AlignedSegment.get_cigar_stats
-    def alignment_features(self, alignment):
-        self.map_qual_sum += alignment.mapping_quality 
-        self.align_len_sum += alignment.query_alignment_length
+    def count(self, read):
+        self.num_reads += 1
+        if not read.is_del and not read.is_refskip:
+            self.base_qual += read.alignment.query_qualities[read.query_position]
+        alignment = read.alignment
+        self.map_qual += alignment.mapping_quality 
+        self.align_len += alignment.query_alignment_length
         cigar_stats = alignment.get_cigar_stats()[0]
         if len(cigar_stats) == 11:
-            self.nm_sum += cigar_stats[10]
+            self.nm += cigar_stats[10]
             # count soft and hard clips together
-            self.clipping_sum += cigar_stats[4] + cigar_stats[5]
-            self.indel_sum += cigar_stats[1] + cigar_stats[2]
-
-
-    def base_features(self, read):
-        base = read.alignment.query_sequence[read.query_position].upper()
-        if base in VALID_DNA_BASES:
-            self.base_counts[base] += 1
+            self.clipping += cigar_stats[4] + cigar_stats[5]
+            self.indel += cigar_stats[1] + cigar_stats[2]
+        if alignment.is_reverse:
+            self.reverse_strand += 1
         else:
-            exit(f"Unrecognised base: {base}")
-        self.base_qual_sum += read.alignment.query_qualities[read.query_position]
+            self.forward_strand += 1
+
+    def as_list(self):
+        if self.num_reads > 0:
+            averages = [self.nm / self.num_reads,
+                        self.base_qual / self.num_reads,
+                        self.map_qual / self.num_reads, 
+                        self.align_len / self.num_reads,
+                        self.clipping / self.num_reads,
+                        self.indel / self.num_reads]
+        else:
+            averages = ['', '', '', '', '', '']
+        return averages + [self.forward_strand, self.reverse_strand]
+
+class BaseCounts(object):
+    fields = ["depth", "A", "T", "G", "C", "N", "ref", "alt", "alt vaf"]
+
+    def __init__(self, ref, alt):
+        self.ref = ref
+        self.alt = alt
+        self.A = 0
+        self.T = 0
+        self.G = 0
+        self.C = 0
+        self.N = 0
+
+    def count(self, base):
+        if base == 'A':
+            self.A += 1
+        elif base == 'T':
+            self.T += 1
+        elif base == 'G':
+            self.G += 1
+        elif base == 'C':
+            self.C += 1
+        elif base == 'N':
+            self.N += 1
+
+    def as_list(self):
+        total_depth = self.A + self.T + self.G + self.C + self.N
+        ref_count = getattr(self, self.ref)
+        alt_count = getattr(self, self.alt)
+        alt_vaf = alt_count / total_depth
+        return [total_depth, self.A, self.T, self.G, self.C, self.N, ref_count, alt_count, alt_vaf]
 
 
+class LocusFeatures(object):
+    fields = BaseCounts.fields + \
+             ["ref " + x for x in ReadFeatures.fields] + \
+             ["alt " + x for x in ReadFeatures.fields] + \
+             ["all " + x for x in ReadFeatures.fields]
+
+    def __init__(self, ref, alt):
+        self.ref = ref
+        self.alt = alt
+        # counts of DNA bases at this pileup position
+        self.base_counts = BaseCounts(ref, alt) 
+        # features where the read contains the reference base at this position
+        self.ref_read_features = ReadFeatures()
+        # features where the read contains the alternative base at this position
+        self.alt_read_features = ReadFeatures()
+        # features for all reads that overlap this position, regardless of the base
+        self.all_read_features = ReadFeatures()
+
+    def count(self, read):
+        # Get the DNA base from the current read if we can
+        if not read.is_del and not read.is_refskip:
+            base = read.alignment.query_sequence[read.query_position].upper()
+            self.base_counts.count(base)
+            if base == self.ref:
+                # only count features of reads containing the reference base
+                self.ref_read_features.count(read)
+            elif base == self.alt:
+                # only count features of reads containing the alternative base
+                self.alt_read_features.count(read)
+        # count features of reads regardless of the base
+        self.all_read_features.count(read)
+
+    def as_list(self):
+        return self.base_counts.as_list() + \
+               self.ref_read_features.as_list() + \
+               self.alt_read_features.as_list() + \
+               self.all_read_features.as_list()
 
 
-def process_bam(filepath, variants):
-    result = {}
-    logging.info(f"Reading BAM file: {filepath}")
-    resolved_path = os.path.realpath(filepath)
-    logging.info(f"Resolved filepath to: {resolved_path}")
-    samfile = pysam.AlignmentFile(resolved_path, "rb")
-    for (chrom, pos, ref, alt) in variants:
+MAX_PILEUP_DEPTH = 1000000000
+
+class BamReader(object):
+    def __init__(self, filepath):
+        logging.info(f"Reading BAM file: {filepath}")
+        resolved_path = os.path.realpath(filepath)
+        logging.info(f"Resolved filepath to: {resolved_path}")
+        self.samfile = pysam.AlignmentFile(resolved_path, "rb")
+
+    # pos is expected to be 1-based 
+    def variant_features(self, chrom, pos, ref, alt):
         zero_based_pos = pos - 1
-        features = Features()
-        num_considered_reads = 0
-        for pileupcolumn in samfile.pileup(chrom, zero_based_pos, zero_based_pos+1,
-                truncate=True, stepper='samtools',
-                ignore_overlaps=False, ignore_orphans=True,
-                max_depth=1000000000): 
-            for pileupread in pileupcolumn.pileups:
-                if not pileupread.is_del and not pileupread.is_refskip:
-                    this_alignment = pileupread.alignment
-                    num_considered_reads += 1
-                    features.alignment_features(this_alignment)
-                    features.base_features(pileupread)
-        alt_count = features.base_counts[alt]
-        ref_count = features.base_counts[ref]
-        if num_considered_reads > 0:
-            average_nm = features.nm_sum / num_considered_reads
-            average_base_qual = features.base_qual_sum / num_considered_reads
-            average_map_qual = features.map_qual_sum / num_considered_reads
-            average_align_len = features.align_len_sum / num_considered_reads
-            alt_vaf = alt_count / num_considered_reads 
-            average_clipping = features.clipping_sum / num_considered_reads
-            average_indels = features.indel_sum / num_considered_reads
-        else:
-            average_nm = average_base_qual = average_map_qual = average_align_len = alt_vaf = average_clipping = average_indels = ''
-        result[(chrom, pos, ref, alt)] = {
-            "depth": num_considered_reads,
-            "A": features.base_counts['A'],
-            "T": features.base_counts['T'], 
-            "G": features.base_counts['G'], 
-            "C": features.base_counts['C'], 
-            "N": features.base_counts['N'], 
-            "ref count": ref_count,
-            "alt count": alt_count,
-            "alt VAF": alt_vaf,
-            "avg NM": average_nm,
-            "avg base qual": average_base_qual,
-            "avg map qual": average_map_qual,
-            "avg align len": average_align_len,
-            "avg clipping": average_clipping,
-            "avg INDEL": average_indels }
-    return result
+        features = LocusFeatures(ref, alt)
+        for pileupcolumn in self.samfile.pileup(chrom, zero_based_pos, zero_based_pos+1,
+                                               truncate=True, stepper='samtools',
+                                               ignore_overlaps=False, ignore_orphans=True,
+                                               max_depth=MAX_PILEUP_DEPTH): 
+            for read in pileupcolumn.pileups:
+                features.count(read)
+        return features 
+
+    def close(self):
+        self.samfile.close()
 
 
 class Regions(object):
@@ -252,6 +318,10 @@ class Regions(object):
             for interval in this_regions[one_based_inclusive_start: one_based_exclusive_end]:
                 start, end, label = interval
                 yield start, end, label
+
+    def get_labels(self):
+        return sorted(list(self.region_labels))
+
 
 '''
 Regions are represented in BED format as:

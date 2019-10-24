@@ -14,6 +14,14 @@ These are some examples of the kinds of information collected per variant:
 * Counts of DNA bases at locus of variant.
 * Number of INDELs in overlapping reads.
 * Number of clipped bases in overlapping reads.
+* Number of overlapping reads on forward and reverse strands.
+
+These features are computed for all reads overlapping the variant locus, and for those reads that contain only the reference and alt alleles.
+
+# Assumptions
+
+Snvly assumes that the variants in the input VCF are somatic SNVs only. It does not check any genotyping information 
+in the file, or do any variant filtering. Only variants with one alternative allele are supported.
 
 In the examples below, `$` indicates the command line prompt.
 
