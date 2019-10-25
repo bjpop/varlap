@@ -129,14 +129,31 @@ optional arguments:
   --log LOG_FILE        record program progress in LOG_FILE
 ```
 
-## Example usage: somatic variants in the context of tumour and normal BAMs
+# Optional regions BED file
+
+Snvly permits the use of an optional input "regions" BED file that specifies genomic regions that may be of interest in your analysis. A typical example might be to supply information about repeat regions, such as those computed by [RepeatMasker](http://www.repeatmasker.org).
+
+The BED file must contain 4 columns: chromosome, start, end, label. The start and end coordinates follow the BED convention of being zero-based and semi-closed. The label can be any string that you like. Each unique label in this file will result in a column in the output, therefore it is adviseable to avoid having too many unique labels.
+
+Below is an example of the first few lines of a possible region file for humans representing repeats from RepeatMasker:
+
+```
+#genoName genoStart genoEnd repClass
+1 16777160 16777470 SINE
+1 25165800 25166089 SINE
+1 33553606 33554646 LINE
+1 58720067 58720973 LINE
+1 83886030 83886750 LTR
+```
+
+# Example usage: somatic variants in the context of tumour and normal BAMs
 
 Consider somatic variants in the context of tumour and normal BAM files:
 ```
 snvly --sample sample_id --labels tumour normal -- tumour.bam normal.bam < variants.vcf
 ```
 
-## Example usage: germline variants in the context of a normal BAM
+# Example usage: germline variants in the context of a normal BAM
 
 ```
 snvly --sample sample_id --labels normal -- normal.bam < variants.vcf
