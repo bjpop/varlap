@@ -1,11 +1,11 @@
 # Overview 
 
-Snvly is designed to compute various bits of information about somatic SNVs from corresponding BAM files.
+Snvly is designed to compute various bits of information about SNVs from corresponding BAM files.
 
 Common use cases are to consider somatic variants in the context of tumour and normal alignments, or germline variants against normal alignments. 
 However, snvly is quite flexible and allows the use of any number of BAM files as input. 
 
-It is particularly intended for quality control checking of somatic SNVs. For example, you can use the output of snvly
+It is particularly intended for quality control checking of SNVs. For example, you can use the output of snvly
 to check for outliers in the data that might be indicative of errors. Therefore, many of the bits of information collected
 by snvly are often signs of things going wrong in the sequencing and alignment.
 
