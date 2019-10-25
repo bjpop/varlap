@@ -15,6 +15,7 @@ import pysam
 import csv
 from intervaltree import Interval, IntervalTree
 import os.path
+import pathlib
 
 
 EXIT_FILE_IO_ERROR = 1
@@ -47,12 +48,12 @@ def parse_args():
     Returns Options object with command line argument values as attributes.
     Will exit the program on a command line error.
     '''
-    description = 'Compute various bits of information about somatic variants in tumour and normal BAM files'
+    description = 'Compute various bits of information about variants in one or more BAM files'
     parser = ArgumentParser(description=description)
     parser.add_argument(
-        '--tumour', metavar='BAM', type=str, help='Filepath of tumour BAM file')
+        'bams', nargs='+', metavar='BAM', type=str, help='Filepaths of BAM files')
     parser.add_argument(
-        '--normal', metavar='BAM', type=str, help='Filepath of normal BAM file')
+        '--labels', required=False, nargs='*', metavar='LABEL', type=str, help='Labels for BAM files')
     parser.add_argument(
         '--sample', required=True, metavar='SAMPLE', type=str, help='Sample identifier')
     parser.add_argument(
@@ -109,15 +110,14 @@ def get_variants():
     return sorted(result)
 
 
-def write_header(options, regions):
+def write_header(options, bam_labels, regions):
     header_general = ["chrom", "pos", "ref", "alt", "sample"]
-    header_tumour = ["tumour " + f for f in LocusFeatures.fields]
-    header_normal = ["normal " + f for f in LocusFeatures.fields]
+    bam_headers = [label + " " + field for label in bam_labels for field in LocusFeatures.fields]
     if not options.noheader:
         header_regions = []
         if regions is not None:
             header_regions = regions.get_labels()
-        header = header_general + header_regions + header_tumour + header_normal
+        header = header_general + header_regions + bam_headers 
         print(",".join(header))
 
 
@@ -135,23 +135,35 @@ def get_variant_region_intersections(regions, chrom, pos):
     return result
  
 
+# give each input BAM file a label, either from the labels given
+# on the command line, or, if there are too few of those, from
+# the name of the file
+def get_bam_labels(labels, bam_files):
+    result = []
+    for index, bam_filename in enumerate(bam_files):
+        if labels is not None and index <= len(labels):
+            result.append(labels[index])
+        else:
+            name = pathlib.PurePath(bam_filename).name
+            result.append(name)
+    return result
+
+
 def process_variants_bams(options, regions, variants):
-    tumour_reader = BamReader(options.tumour)
-    normal_reader = BamReader(options.normal)
-    write_header(options, regions)
+    bam_labels = get_bam_labels(options.labels, options.bams)
+    bam_readers = [BamReader(filepath) for filepath in options.bams]
+    write_header(options, bam_labels, regions)
     for chrom, pos, ref, alt in variants:
         region_counts = get_variant_region_intersections(regions, chrom, pos)
-        tumour_features = tumour_reader.variant_features(chrom, pos, ref, alt)
-        normal_features = normal_reader.variant_features(chrom, pos, ref, alt)
-        write_output_row(chrom, pos, ref, alt, options.sample, region_counts, tumour_features, normal_features)
-    tumour_reader.close()
-    normal_reader.close()
+        bams_features = [reader.variant_features(chrom, pos, ref, alt) for reader in bam_readers]
+        write_output_row(chrom, pos, ref, alt, options.sample, region_counts, bams_features)
+    for reader in bam_readers:
+        reader.close()
 
 
-def write_output_row(chrom, pos, ref, alt, sample, regions, tumour_features, normal_features):
-    row_tumour = [str(x) for x in tumour_features.as_list()]
-    row_normal = [str(x) for x in normal_features.as_list()]
-    row = [chrom, str(pos), ref, alt, sample] + regions + row_tumour + row_normal
+def write_output_row(chrom, pos, ref, alt, sample, regions, bam_features):
+    row_bams = [str(x) for bam in bam_features for x in bam.as_list()]
+    row = [chrom, str(pos), ref, alt, sample] + regions + row_bams 
     print(",".join(row))
  
 
