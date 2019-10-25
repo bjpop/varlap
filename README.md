@@ -146,15 +146,14 @@ Below is an example of the first few lines of a possible region file for humans 
 1 83886030 83886750 LTR
 ```
 
-# Example usage: somatic variants in the context of tumour and normal BAMs
+# Example usage
 
-Consider somatic variants in the context of tumour and normal BAM files:
+Consider somatic variants in the context of tumour and normal BAM files, using a regions bed file
 ```
-snvly --sample sample_id --labels tumour normal -- tumour.bam normal.bam < variants.vcf
+snvly --sample sample_id --labels tumour normal --regions regions.bed -- tumour.bam normal.bam < variants.vcf
 ```
 
-# Example usage: germline variants in the context of a normal BAM
-
+Consider germline variants in the context of a normal BAM:
 ```
 snvly --sample sample_id --labels normal -- normal.bam < variants.vcf
 ```
