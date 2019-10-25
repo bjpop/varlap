@@ -55,7 +55,7 @@ def parse_args():
     parser.add_argument(
         '--labels', required=False, nargs='*', metavar='LABEL', type=str, help='Labels for BAM files')
     parser.add_argument(
-        '--sample', required=True, metavar='SAMPLE', type=str, help='Sample identifier')
+        '--sample', default='', required=False, metavar='SAMPLE', type=str, help='Sample identifier')
     parser.add_argument(
         '--regions', required=False, metavar='REGIONS', type=str, help='Filepath of genomic regions-of-interest in BED format')
     parser.add_argument(
@@ -116,7 +116,7 @@ def write_header(options, bam_labels, regions):
     if not options.noheader:
         header_regions = []
         if regions is not None:
-            header_regions = regions.get_labels()
+            header_regions = ["region " + label for label in regions.get_labels()]
         header = header_general + header_regions + bam_headers 
         print(",".join(header))
 

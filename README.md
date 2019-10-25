@@ -1,6 +1,9 @@
 # Overview 
 
-Snvly is designed to compute various bits of information about somatic SNVs from corresponding tumour and normal BAM files.
+Snvly is designed to compute various bits of information about somatic SNVs from corresponding BAM files.
+
+Common use cases are to consider somatic variants in the context of tumour and normal alignments, or germline variants against normal alignments. 
+However, snvly is quite flexible and allows the use of any number of BAM files as input. 
 
 It is particularly intended for quality control checking of somatic SNVs. For example, you can use the output of snvly
 to check for outliers in the data that might be indicative of errors. Therefore, many of the bits of information collected
@@ -15,15 +18,19 @@ These are some examples of the kinds of information collected per variant:
 * Number of INDELs in overlapping reads.
 * Number of clipped bases in overlapping reads.
 * Number of overlapping reads on forward and reverse strands.
+* Optionally, whether the variant overlaps a genomic region of interest (such as a repeat region) - the user must supply a bed file of regions.
 
 These features are computed for all reads overlapping the variant locus, and for those reads that contain only the reference and alt alleles.
 
+In the examples below, `$` indicates the command line prompt.
+
 # Assumptions
 
-Snvly assumes that the variants in the input VCF are somatic SNVs only. It does not check any genotyping information 
-in the file, or do any variant filtering. Only variants with one alternative allele are supported.
-
-In the examples below, `$` indicates the command line prompt.
+Snvly does not do any filtering or interpretation of the variants in the input VCF file. For example, it does not assume the variants
+originate from any particular sample, it does not check any genotype information in the VCF file, and it does not filter the variants
+in any way. It simply checks each variant locus in each of the supplied BAM files. The only information it uses from the input VCF file
+is the chromosome, position, reference allele and alternative allele. Currently it only supports variants with one alternative allele
+in a given row in the input file.
 
 # Licence
 
@@ -60,35 +67,79 @@ $ pip install -U /path/to/snvly
 $ pip install -U --user /path/to/snvly
 ```
 
+# Output
+
+Snvly generates a CSV file on the standard output device.
+
+The following column headings are always present for every output row:
+
+* chrom: the chromosome on which the variant appears (same as input VCF)
+* pos: the genomic position of the variant on the chromosomes (1-based coordinates, same as input VCF)
+* ref: the reference allele of the variant (same as input VCF)
+* alt: the alternative allele of the variant (same as input VCF)
+* sample: the sample identifier if provided on the command line with `--sample`, otherwise this is empty. This feature is useful if you intend to analyse many samples separately and then combine their output CSV files together, for a group analysis.
+
+If a `--regions` command line argument is given, snvly will produce a column for every unique feature in the input regions BED file. For example, if the input regions file contained information about repeats, and there were 6 different kinds of repeats in the file, then there would be 6 columns in the output, one for each feature label. For a given region column, Each row in the output would contain either True or False indicating whether the variant intersected with the given feature.
+
+For each BAM file in the input, snvly generates the following output columns:
+
+* depth: total depth of sequencing observed at this locus. Specifically this is the sum of the number of As, Ts, Gs, Cs and Ns at this locus in reads from the BAM file that overlap the locus 
+* A: number of As at this locus in reads from the BAM file that overlap the locus
+* T: number of Ts at this locus in reads from the BAM file that overlap the locus
+* G: number of Gs at this locus in reads from the BAM file that overlap the locus
+* C: number of Cs at this locus in reads from the BAM file that overlap the locus
+* N: number of Ns at this locus in reads from the BAM file that overlap the locus
+* ref: number of reference allele bases at this locus in reads from the BAM file that overlap the locus
+* alt: number of alternative allele bases at this locus in reads from the BAM file that overlap the locus
+* alt vaf: variant allele fraction (between 0 and 1) at this locus. Specifically this is the number of alternative allele bases divided by the total number of bases observed at this locus.
+
+The following information is collected for reads overlapping the locus in 3 ways: 1) only reads that contain the reference allele at the locus, 2) only reads that contain the alternative allele at the locus, and 3) all reads overlapping the locus regardless of the base at the locus:
+
+* avg NM: average edit distance in reads overlapping the locus 
+* avg base qual: average base quality of refererence bases at this locus
+* avg map qual: average mapping quality of reads overlapping the locus
+* avg align len: average alignment length of reads overlapping the locus
+* avg clipped bases: average number of soft and hard clipped bases in reads overlapping the locus
+* avg indel bases: average number of INDELs in reads overlapping the locus
+* fwd strand: average number of reads overlapping the locus that map to the forward strand
+* rev strand: average number of reads overlapping the locus that map to the reverse strand
+
 # General behaviour
 
 Get help:
 ```
-$ snvly -h
-usage: snvly [-h] [--tumour BAM] [--normal BAM] --sample SAMPLE [--version]
-             [--log LOG_FILE]
+snvly -h
+usage: snvly [-h] [--labels [LABEL [LABEL ...]]] [--sample SAMPLE]
+             [--regions REGIONS] [--noheader] [--version] [--log LOG_FILE]
+             BAM [BAM ...]
 
-Compute various bits of information about somatic variants in tumour and
-normal BAM files
+Compute various bits of information about variants in one or more BAM files
+
+positional arguments:
+  BAM                   Filepaths of BAM files
 
 optional arguments:
-  -h, --help       show this help message and exit
-  --tumour BAM     Filepath of tumour BAM file
-  --normal BAM     Filepath of normal BAM file
-  --sample SAMPLE  Sample identifier
-  --version        show program's version number and exit
-  --log LOG_FILE   record program progress in LOG_FILE
-
+  -h, --help            show this help message and exit
+  --labels [LABEL [LABEL ...]]
+                        Labels for BAM files
+  --sample SAMPLE       Sample identifier
+  --regions REGIONS     Filepath of genomic regions-of-interest in BED format
+  --noheader            Suppress output header row
+  --version             show program's version number and exit
+  --log LOG_FILE        record program progress in LOG_FILE
 ```
 
-Run on a somatic VCF file supplying tumour and normal bams for the same donor:
+## Example usage: somatic variants in the context of tumour and normal BAMs
+
+Consider somatic variants in the context of tumour and normal BAM files:
 ```
-snvly --sample sample_id --tumour tumour.bam --normal normal.bam < variants.vcf
+snvly --sample sample_id --labels tumour normal -- tumour.bam normal.bam < variants.vcf
 ```
 
-Or from a compressed VCF file:
+## Example usage: germline variants in the context of a normal BAM
+
 ```
-zcat variants.vcf.gz | snvly --sample sample_id --tumour tumour.bam --normal normal.bam
+snvly --sample sample_id --labels normal -- normal.bam < variants.vcf
 ```
 
 # Bug reporting and feature requests
