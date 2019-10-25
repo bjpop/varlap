@@ -79,7 +79,7 @@ The following column headings are always present for every output row:
 * alt: the alternative allele of the variant (same as input VCF)
 * sample: the sample identifier if provided on the command line with `--sample`, otherwise this is empty. This feature is useful if you intend to analyse many samples separately and then combine their output CSV files together, for a group analysis.
 
-If a `--regions` command line argument is given, snvly will produce a column for every unique feature in the input regions BED file. For example, if the input regions file contained information about repeats, and there were 6 different kinds of repeats in the file, then there would be 6 columns in the output, one for each feature label. For a given region column, Each row in the output would contain either True or False indicating whether the variant intersected with the given feature.
+If a `--regions` command line argument is given, snvly will produce a column for every unique feature in the input regions BED file. For example, if the input regions file contained information about repeats, and there were 6 different kinds of repeats in the file, then there would be 6 columns in the output, one for each feature label. For a given region column, each row in the output would contain either True or False indicating whether the variant intersected with the given feature.
 
 For each BAM file in the input, snvly generates the following output columns:
 
