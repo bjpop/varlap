@@ -111,7 +111,7 @@ def get_variants():
 
 
 def write_header(options, bam_labels, regions):
-    header_general = ["chrom", "pos", "ref", "alt", "sample"]
+    header_general = ["chrom", "pos", "ref", "alt", "pos normalised", "sample"]
     bam_headers = [label + " " + field for label in bam_labels for field in LocusFeatures.fields]
     if not options.noheader:
         header_regions = []
@@ -149,21 +149,37 @@ def get_bam_labels(labels, bam_files):
     return result
 
 
+# Return the variant position as a fraction of the entire chromosome
+# length. 
+def get_chrom_pos_fraction(readers, chrom, pos):
+    # We assume (require) that all BAM files are aligned
+    # to the same reference genome, so it doesn't matter which
+    # one we use to decide where in the chromosome a position appears.
+    # Thus it is safe to use the first one.
+    if len(readers) > 0:
+        first_reader = readers[0]
+        this_chrom_length = first_reader.get_reference_length(chrom)
+        return pos / this_chrom_length
+    else:
+        return ''
+
+
 def process_variants_bams(options, regions, variants):
     bam_labels = get_bam_labels(options.labels, options.bams)
     bam_readers = [BamReader(filepath) for filepath in options.bams]
     write_header(options, bam_labels, regions)
     for chrom, pos, ref, alt in variants:
+        pos_normalised = get_chrom_pos_fraction(bam_readers, chrom, pos)
         region_counts = get_variant_region_intersections(regions, chrom, pos)
         bams_features = [reader.variant_features(chrom, pos, ref, alt) for reader in bam_readers]
-        write_output_row(chrom, pos, ref, alt, options.sample, region_counts, bams_features)
+        write_output_row(chrom, pos, ref, alt, pos_normalised, options.sample, region_counts, bams_features)
     for reader in bam_readers:
         reader.close()
 
 
-def write_output_row(chrom, pos, ref, alt, sample, regions, bam_features):
+def write_output_row(chrom, pos, ref, alt,  pos_normalised, sample, regions, bam_features):
     row_bams = [str(x) for bam in bam_features for x in bam.as_list()]
-    row = [chrom, str(pos), ref, alt, sample] + regions + row_bams 
+    row = [chrom, str(pos), ref, alt, str(pos_normalised), sample] + regions + row_bams 
     print(",".join(row))
  
 
@@ -309,6 +325,9 @@ class BamReader(object):
                 features.count(read)
         return features 
 
+    def get_reference_length(self, chrom):
+        return self.samfile.get_reference_length(chrom)
+
     def close(self):
         self.samfile.close()
 
@@ -386,6 +405,7 @@ def main():
     variants = get_variants()
     regions = get_regions(options.regions)
     process_variants_bams(options, regions, variants)
+    logging.info("Completed")
 
 
 # If this script is run from the command line then call the main function.
