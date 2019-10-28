@@ -189,7 +189,7 @@ class ReadFeatures(object):
 
     fields = ["avg NM", "avg base qual", "avg map qual",
               "avg align len", "avg clipped bases", "avg indel bases",
-              "fwd strand", "rev strand"]
+              "fwd strand", "rev strand", "normalised read position"]
 
     def __init__(self):
         self.nm = 0
@@ -200,13 +200,18 @@ class ReadFeatures(object):
         self.indel = 0
         self.forward_strand = 0
         self.reverse_strand = 0
+        self.normalised_read_position = 0 
         self.num_reads = 0
 
     # See: https://pysam.readthedocs.io/en/latest/api.html#pysam.AlignedSegment.get_cigar_stats
     def count(self, read):
         self.num_reads += 1
+        query_position = read.query_position
+        query_length = read.alignment.query_length
+        if query_position is not None and query_length > 0:
+            self.normalised_read_position += query_position / read.alignment.query_length
         if not read.is_del and not read.is_refskip:
-            self.base_qual += read.alignment.query_qualities[read.query_position]
+            self.base_qual += read.alignment.query_qualities[query_position]
         alignment = read.alignment
         self.map_qual += alignment.mapping_quality 
         self.align_len += alignment.query_alignment_length
@@ -222,16 +227,16 @@ class ReadFeatures(object):
             self.forward_strand += 1
 
     def as_list(self):
+        # normalise the results to the number of observed reads in total
         if self.num_reads > 0:
-            averages = [self.nm / self.num_reads,
-                        self.base_qual / self.num_reads,
-                        self.map_qual / self.num_reads, 
-                        self.align_len / self.num_reads,
-                        self.clipping / self.num_reads,
-                        self.indel / self.num_reads]
+            result = [x / self.num_reads for x in [
+                self.nm, self.base_qual, self.map_qual,
+                self.align_len, self.clipping, self.indel,
+                self.forward_strand, self.reverse_strand,
+                self.normalised_read_position]]
         else:
-            averages = ['', '', '', '', '', '']
-        return averages + [self.forward_strand, self.reverse_strand]
+            result = ['' for _ in ReadFeatures.fields]
+        return result 
 
 class BaseCounts(object):
     fields = ["depth", "A", "T", "G", "C", "N", "ref", "alt", "alt vaf"]
