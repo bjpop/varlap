@@ -266,7 +266,10 @@ class BaseCounts(object):
         total_depth = self.A + self.T + self.G + self.C + self.N
         ref_count = getattr(self, self.ref)
         alt_count = getattr(self, self.alt)
-        alt_vaf = alt_count / total_depth
+        if total_depth > 0:
+            alt_vaf = alt_count / total_depth
+        else:
+            alt_vaf = ''
         return [total_depth, self.A, self.T, self.G, self.C, self.N, ref_count, alt_count, alt_vaf]
 
 
