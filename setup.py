@@ -21,11 +21,13 @@ setup(
     packages=['snvly'],
     package_dir={'snvly': 'snvly'},
     entry_points={
-        'console_scripts': ['snvly = snvly.snvly:main']
+        'console_scripts': ['snvly = snvly.snvly:main',
+                           'snvly_outliers = snvly.snvly_outliers:main',
+                           'snvly_dist_plots = snvly.snvly_dist_plots:main' ]
     },
     url='https://github.com/bjpop/snvly',
     license='LICENSE',
     description=('Check somatic SNVs against their germline support'),
     long_description=(LONG_DESCRIPTION),
-    install_requires=["pysam", "intervaltree"],
+    install_requires=["pysam", "intervaltree", "pandas", "seaborn"],
 )
