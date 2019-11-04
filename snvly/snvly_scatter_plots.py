@@ -22,8 +22,10 @@ import os
 
 EXIT_FILE_IO_ERROR = 1
 EXIT_COMMAND_LINE_ERROR = 2
-PROGRAM_NAME = "snvly_dist_plots"
-DEFAULT_OUT_DIR = "dist_plots"
+PROGRAM_NAME = "snvly_scatter_plots"
+DEFAULT_OUT_DIR = "scatter_plots"
+DEFAULT_ALPHA = 0.3
+DEFAULT_LINEWIDTH = 0
 
 try:
     PROGRAM_VERSION = pkg_resources.require(PROGRAM_NAME)[0].version
@@ -58,8 +60,20 @@ def parse_args():
         '--outdir',  metavar='DIR', default=DEFAULT_OUT_DIR, type=str,
         help=f'Name of output directory. Default={DEFAULT_OUT_DIR}')
     parser.add_argument(
+        '--nolegend', action='store_true', 
+        help=f'Turn off the legend in the plot')
+    parser.add_argument(
+        '--hues',  metavar='FEATURE', type=str, nargs='+',
+        help=f'Name of features to use for colouring dots (e.g. "sample" "chrom")')
+    parser.add_argument(
+        '--alpha',  metavar='ALPHA', type=float, default=DEFAULT_ALPHA,
+        help=f'Alpha value for plotting points (default: {DEFAULT_ALPHA})')
+    parser.add_argument(
+        '--linewidth',  metavar='WIDTH', type=int, default=DEFAULT_LINEWIDTH,
+        help=f'Line width value for plotting points (default: {DEFAULT_LINEWIDTH})')
+    parser.add_argument(
         '--features',  metavar='FEATURE', nargs="+", required=True, type=str,
-        help=f'Features to plot')
+        help=f'Features to plot, format: feature1,feature2 (no spaces between feature names, e.g. "pos normalised","tumour depth")')
     parser.add_argument('--version',
                         action='version',
                         version='%(prog)s ' + PROGRAM_VERSION)
@@ -94,51 +108,44 @@ def init_logging(log_filename):
 
 def plots(options):
     df = pd.read_csv(options.data, sep=",", dtype={'chrom': str})
-    plot_distributions(df, options)
-    if 'chrom' in df.columns:
-        plot_distributions_by(df, options, 'chrom')
-    else:
-        logging.warn(f"Feature: chrom does not exist in data, skipping")
-    if 'sample' in df.columns:
-        plot_distributions_by(df, options, 'sample')
-    else:
-        logging.warn(f"Feature: sample does not exist in data, skipping")
-
-def plot_distributions(df, options):
-    for feature in options.features:
-        if feature in df.columns:
-            plt.clf()
-            plt.suptitle('')
-            fig, ax = plt.subplots(figsize=(10,8))
-            sns.distplot(df[feature], kde=False, bins=100) 
-            filename = os.path.join(options.outdir, 'dist', feature.replace(' ', '_') + '.dist.png')
-            ax.set(xlabel=feature, ylabel='num variants')
-            plt.tight_layout()
-            plt.savefig(filename)
-            plt.close()
+    for feature_pair in options.features:
+        fields = feature_pair.split(",")
+        if len(fields) == 2:
+            feature1, feature2 = fields
+            if {feature1, feature2}.issubset(df.columns):
+                plt.clf()
+                plt.suptitle('')
+                fig, ax = plt.subplots(figsize=(10,8))
+                if options.hues:
+                    for hue in options.hues:
+                        scatter_plot(options, df, feature1, feature2, hue, options.alpha, options.linewidth)
+                else:
+                    scatter_plot(options, df, feature1, feature2, None, options.alpha, options.linewidth)
+            else:
+                logging.warn(f"One or both of these features was not in the data: '{feature1}' '{feature2}', skipping")
         else:
-            logging.warn(f"Feature: {feature} does not exist in data, skipping")
+            logging.warn(f"Badly formatted feature pair {feature_pair}, skipping")
 
 
-def plot_distributions_by(df, options, key):
-    for feature in options.features:
-        if feature in df.columns:
-            plt.clf()
-            plt.suptitle('')
-            fig, ax = plt.subplots(figsize=(10,8))
-            sns.boxplot(data=df, x=key, y=feature) 
-            filename = os.path.join(options.outdir, "dist" + "_" + key,
-                                    feature.replace(' ', '_') + '.dist_' + key + '.png')
-            ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
-            ax.set(xlabel=key, ylabel=feature)
-            plt.tight_layout()
-            plt.savefig(filename)
-            plt.close()
-        else:
-            logging.warn(f"Feature: {feature} does not exist in data, skipping")
+def scatter_plot(options, df, feature1, feature2, hue, alpha, linewidth):
+    plt.clf()
+    plt.suptitle('')
+    fig, ax = plt.subplots(figsize=(10,8))
+    g=sns.scatterplot(data=df, x=feature1, y=feature2, hue=hue, alpha=options.alpha, linewidth=options.linewidth) 
+    g.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
+    if options.nolegend:
+        g.legend_.remove()
+    feature1_str = feature1.replace(' ', '_')
+    feature2_str = feature2.replace(' ', '_')
+    hue_str = '' if hue is None else hue
+    filename = os.path.join(options.outdir, 'scatter',
+        feature1_str + "-" + feature2_str + '-' + hue_str + '.scatter.png')
+    ax.set(xlabel=feature1, ylabel=feature2)
+    plt.tight_layout()
+    plt.savefig(filename)
+    plt.close()
 
-
-PLOT_DIRS = ["dist", "dist_chrom", "dist_sample"]
+PLOT_DIRS = ["scatter"]
 
 def make_output_directories(outdir):
     for subdir in PLOT_DIRS:

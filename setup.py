@@ -23,7 +23,8 @@ setup(
     entry_points={
         'console_scripts': ['snvly = snvly.snvly:main',
                            'snvly_outliers = snvly.snvly_outliers:main',
-                           'snvly_dist_plots = snvly.snvly_dist_plots:main' ]
+                           'snvly_dist_plots = snvly.snvly_dist_plots:main', 
+                           'snvly_scatter_plots = snvly.snvly_scatter_plots:main']
     },
     url='https://github.com/bjpop/snvly',
     license='LICENSE',
