@@ -131,8 +131,9 @@ def plot_distributions_by(df, options, key):
             plt.suptitle('')
             fig, ax = plt.subplots(figsize=(10,8))
             sns.boxplot(data=df, x=key, y=feature) 
-            filename = os.path.join(options.outdir, "dist" + "_" + key,
-                                    feature.replace(' ', '_') + '.dist_' + key + '.png')
+            key_str = key.replace(' ', '_')
+            filename = os.path.join(options.outdir, "dist" + "_" + key_str,
+                                    feature.replace(' ', '_') + '.dist_' + key_str + '.png')
             ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
             ax.set(xlabel=key, ylabel=feature)
             plt.tight_layout()
