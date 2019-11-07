@@ -60,6 +60,9 @@ def parse_args():
     parser.add_argument(
         '--features',  metavar='FEATURE', nargs="+", required=True, type=str,
         help=f'Features to plot')
+    parser.add_argument(
+        '--groups',  metavar='GROUP', nargs="*", required=False, type=str,
+        help=f'Feature labels to group by')
     parser.add_argument('--version',
                         action='version',
                         version='%(prog)s ' + PROGRAM_VERSION)
@@ -95,14 +98,15 @@ def init_logging(log_filename):
 def plots(options):
     df = pd.read_csv(options.data, sep=",", dtype={'chrom': str})
     plot_distributions(df, options)
-    if 'chrom' in df.columns:
-        plot_distributions_by(df, options, 'chrom')
-    else:
-        logging.warn(f"Feature: chrom does not exist in data, skipping")
-    if 'sample' in df.columns:
-        plot_distributions_by(df, options, 'sample')
-    else:
-        logging.warn(f"Feature: sample does not exist in data, skipping")
+    #if 'chrom' in df.columns:
+    #    plot_distributions_by(df, options, 'chrom')
+    #else:
+    #    logging.warn(f"Feature: chrom does not exist in data, skipping")
+    for group in options.groups:
+        if group in df.columns:
+            plot_distributions_by(df, options, group)
+        else:
+            logging.warn(f"Feature: {group} does not exist in data, skipping")
 
 def plot_distributions(df, options):
     for feature in options.features:
@@ -138,18 +142,18 @@ def plot_distributions_by(df, options, key):
             logging.warn(f"Feature: {feature} does not exist in data, skipping")
 
 
-PLOT_DIRS = ["dist", "dist_chrom", "dist_sample"]
 
-def make_output_directories(outdir):
-    for subdir in PLOT_DIRS:
-        os.makedirs(os.path.join(outdir, subdir), exist_ok=True)
+def make_output_directories(options):
+    plot_dirs = ["dist"] + ["dist_" + group for group in options.groups]
+    for subdir in plot_dirs:
+        os.makedirs(os.path.join(options.outdir, subdir), exist_ok=True)
 
 
 def main():
     "Orchestrate the execution of the program"
     options = parse_args()
     init_logging(options.log)
-    make_output_directories(options.outdir)
+    make_output_directories(options)
     plots(options)
     logging.info("Completed")
 
