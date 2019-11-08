@@ -22,6 +22,10 @@ These are some examples of the kinds of information collected per variant:
 
 These features are computed for all reads overlapping the variant locus, and for those reads that contain only the reference and alt alleles.
 
+Snvly is also accompanied by some helpful auxilliary programs that can:
+* Produce summary plots of the computed data.
+* Detect outliers in selected features in the data.
+
 In the examples below, `$` indicates the command line prompt.
 
 # Assumptions
@@ -155,8 +159,59 @@ snvly --sample sample_id --labels tumour normal --regions regions.bed -- tumour.
 
 Consider germline variants in the context of a normal BAM:
 ```
-snvly --sample sample_id --labels normal -- normal.bam < variants.vcf
+snvly --sample sample_id --labels normal -- normal.bam < variants.vcf > variants.snvly.csv
 ```
+
+# Computing outliers
+
+The `snvly_outliers` program reads the output of `snvly` and annotates features on variants that are statistically outliers in the context of the entire data set.
+
+You must specify what features you would like to consider (column headings) and what chromosomes to consider. Note that the selection of chromosomes may
+influence what data points are considered outliers, due to underlying biological differences. For example, in human data, it is adviseable to consider 
+the autosomes separately from the X and Y chromosomes. 
+
+Outliers are computed based on the interquartile range of the data, using the so-called (Tukey's fences)[https://en.wikipedia.org/wiki/Outlier#Tukey's_fences]. Data points
+outside the below range are considered outliers:
+
+```
+    [Q1 - k(Q3 - Q1), Q3 + k(Q3 - Q1)]
+
+    where Q1 = the first quartile
+          Q3 = the second quartile
+          k = a scaling factor, determined by the command line parameter --stringency
+```
+Suggested values for k are 1.5 for outliers and 3 for "far" outliers. Some experimentation with this parameter may be useful for a given set of data.
+
+```
+snvly_outliers -h
+usage: snvly_outliers [-h] [--stringency FLOAT] --chroms CHROM [CHROM ...]
+                      --features FEATURES [FEATURES ...] [--noheader]
+                      [--version] [--log LOG_FILE]
+                      DATA
+
+Compute outliers in snvly outputs
+
+positional arguments:
+  DATA                  Filepaths of snvly CSV results file
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --stringency FLOAT    Stringency factor for detecting outliers, default=1.5
+  --chroms CHROM [CHROM ...]
+                        Consider variants on these chromosomes
+  --features FEATURES [FEATURES ...]
+                        Features to consider for outlier values
+  --noheader            Suppress output header row
+  --version             show program's version number and exit
+  --log LOG_FILE        record program progress in LOG_FILE
+```
+
+Example usage:
+
+```
+snvly_outliers --stringency 3 --chroms '1' '2' '3' --features 'tumour all avg NM' 'tumour alt vaf' 'normal alt vaf' variants.snvly.csv > variants.snvly.outliers.csv
+```
+
 
 # Bug reporting and feature requests
 
