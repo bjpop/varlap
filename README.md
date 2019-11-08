@@ -168,7 +168,10 @@ The `snvly_outliers` program reads the output of `snvly` and annotates features 
 
 You must specify what features you would like to consider (column headings) and what chromosomes to consider. Note that the selection of chromosomes may
 influence what data points are considered outliers, due to underlying biological differences. For example, in human data, it is adviseable to consider 
-the autosomes separately from the X and Y chromosomes. 
+the autosomes separately from the X and Y chromosomes. Note that each feature is considered independently for outliers, and thus no testing is done for outliers in mutliple dimensions simultaneously. 
+
+The output will contain all the columns from the input data plus an additional N boolean columns, one for each feature specified on the command line. If a variant is an outlier with respect
+to some feature, it will contain True in the correspond column, otherwise False.
 
 Outliers are computed based on the interquartile range of the data, using the so-called [Tukey's fences](https://en.wikipedia.org/wiki/Outlier#Tukey's_fences). Data points
 outside the below range are considered outliers:
