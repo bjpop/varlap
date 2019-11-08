@@ -170,7 +170,7 @@ You must specify what features you would like to consider (column headings) and 
 influence what data points are considered outliers, due to underlying biological differences. For example, in human data, it is adviseable to consider 
 the autosomes separately from the X and Y chromosomes. 
 
-Outliers are computed based on the interquartile range of the data, using the so-called (Tukey's fences)[https://en.wikipedia.org/wiki/Outlier#Tukey's_fences]. Data points
+Outliers are computed based on the interquartile range of the data, using the so-called [Tukey's fences](https://en.wikipedia.org/wiki/Outlier#Tukey's_fences). Data points
 outside the below range are considered outliers:
 
 ```
