@@ -32,5 +32,5 @@ setup(
     license='LICENSE',
     description=('Check somatic SNVs against their germline support'),
     long_description=(LONG_DESCRIPTION),
-    install_requires=["pysam", "intervaltree", "pandas", "seaborn"],
+    install_requires=["pysam==0.15.3", "intervaltree==3.0.2", "pandas==0.25.2", "seaborn==0.9.0", "matplotlib==3.1.1"],
 )
