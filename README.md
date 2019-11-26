@@ -71,6 +71,17 @@ $ pip install -U /path/to/snvly
 $ pip install -U --user /path/to/snvly
 ```
 
+## Building the Docker container 
+
+The file `Dockerfile` contains instructions for building a Docker container for snvly.
+
+If you have Docker installed on your computer you can build the container like so:
+```
+$ docker build -t snvly .
+```
+See below for information about running snvly within the Docker container.
+
+
 # Output
 
 Snvly generates a CSV file on the standard output device.
@@ -306,6 +317,59 @@ Example usage:
 ```
 snvly_scatter_plots --hues 'sample' 'chrom' --features 'tumour alt vaf','normal alt vaf' 'pos normalised','tumour alt avg map qual' -- variants.snvly.csv
 ```
+
+# Running within the Docker container
+
+The following section describes how to run snvly within the Docker container. It assumes you have Docker (or Singularity) installed on your computer and have built the container as described above. 
+The container behaves in the same way as the normal version of snvly, however there are some Docker-specific details that you must be aware of.
+
+The general syntax for running snvly within Docker is as follows:
+```
+$ docker run -i snvly CMD
+```
+where CMD should be replaced by the specific command line invocation of snvly. Specific examples are below.
+
+Display the help message:
+```
+$ docker run -i snvly snvly -h
+```
+Note: it may seem strange that `snvly` is mentioned twice in the command. The first instance is the name of the Docker container and the second instance is the name of the snvly executable that you want to run inside the container.
+
+Display the version number:
+```
+$ docker run -i snvly snvly --version
+```
+
+Read from multuple input BAM files named on the command line, where all the files are in the same directory. You must replace `DATA` with the absolute file path of the directory containing the BAM files:  
+```
+$ docker run -i -v DATA:/in snvly snvly --labels tumour normal -- /in/tumour.bam /in/normal.bam < sample.vcf 
+```
+The argument `DATA:/in` maps the directory called DATA on your local machine into the `/in` directory within the Docker container.
+
+Logging progress to a file in the directory OUT: 
+```
+$ docker run -i -v DATA:/in -v OUT:/out snvly snvly --log /out/logfile.txt --labels tumour normal -- /in/tumour.bam /in/normal.bam < sample.vcf 
+```
+Replace `OUT` with the absolute path of the directory to write the log file. For example, if you want the log file written to the current working directory, replace `OUT` with `$PWD`.
+As above, you will also need to replace `DATA` with the absolite path to the directory containing your input BAM files.
+
+## Usage with singularity
+
+Singularity can be used to run Docker containers. This can be useful in some environments where Docker is not available (e.g. High Performance Computing systems).
+
+The principles are similar to using Docker, though some of the command line syntax is different. The example below shows how to run snvly on a tumour normal pair, assuming that the Docker container has been imported as `snvly_0.1.0.0.sif`.
+
+The container can be pulled from Docker hub:
+
+```
+singularity pull docker://bjpop/snvly:0.1.0.0
+```
+
+```
+singularity exec --containall -B DATA:/bam snvly_0.1.0.0.sif snvly --labels tumour normal -- /bam/tumour.bam /bam/normal.bam < sample.vcf
+```
+
+As with the Docker example, `DATA` is the path to a directory on your local machine that contains the input BAM file.
 
 # Bug reporting and feature requests
 
