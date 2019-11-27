@@ -42,6 +42,8 @@ This program is released as open source software under the terms of [MIT License
 
 # Installing
 
+## Installing from source
+
 Clone this repository: 
 ```
 $ git clone https://github.com/bjpop/snvly
@@ -71,16 +73,28 @@ $ pip install -U /path/to/snvly
 $ pip install -U --user /path/to/snvly
 ```
 
-## Building the Docker container 
+## Docker container 
 
-The file `Dockerfile` contains instructions for building a Docker container for snvly.
+### Building the Docker container from source
 
-If you have Docker installed on your computer you can build the container like so:
+The file `Dockerfile` contains instructions for building a Docker container for snvly, assuming you have a copy of the snvly source code on your computer.
+
+If you have Docker installed on your computer you can build the container by running the following command within the top directory of the source code: 
 ```
 $ docker build -t snvly .
 ```
 See below for information about running snvly within the Docker container.
 
+### Pulling the Docker container from Docker Hub 
+
+Alternatively, you can pull latest version of the Docker container from Docker Hub like so:
+```
+docker pull bjpop/snvly:latest
+```
+Or, if you are using singularity, then you can pull the docker container like so:
+```
+singularity pull docker://bjpop/snvly:latest
+```
 
 # Output
 
@@ -320,7 +334,7 @@ snvly_scatter_plots --hues 'sample' 'chrom' --features 'tumour alt vaf','normal 
 
 # Running within the Docker container
 
-The following section describes how to run snvly within the Docker container. It assumes you have Docker (or Singularity) installed on your computer and have built the container as described above. 
+The following section describes how to run snvly within the Docker container. It assumes you have Docker (or Singularity) installed on your computer and have built (or pulled) the container as described above. 
 The container behaves in the same way as the normal version of snvly, however there are some Docker-specific details that you must be aware of.
 
 The general syntax for running snvly within Docker is as follows:
@@ -342,13 +356,13 @@ $ docker run -i snvly snvly --version
 
 Read from multuple input BAM files named on the command line, where all the files are in the same directory. You must replace `DATA` with the absolute file path of the directory containing the BAM files:  
 ```
-$ docker run -i -v DATA:/in snvly snvly --labels tumour normal -- /in/tumour.bam /in/normal.bam < sample.vcf 
+$ docker run -i -v DATA:/in snvly snvly --labels tumour normal -- /in/tumour.bam /in/normal.bam < sample.vcf > sample.snvly.csv
 ```
 The argument `DATA:/in` maps the directory called DATA on your local machine into the `/in` directory within the Docker container.
 
 Logging progress to a file in the directory OUT: 
 ```
-$ docker run -i -v DATA:/in -v OUT:/out snvly snvly --log /out/logfile.txt --labels tumour normal -- /in/tumour.bam /in/normal.bam < sample.vcf 
+$ docker run -i -v DATA:/in -v OUT:/out snvly snvly --log /out/logfile.txt --labels tumour normal -- /in/tumour.bam /in/normal.bam < sample.vcf > sample.snvly.csv
 ```
 Replace `OUT` with the absolute path of the directory to write the log file. For example, if you want the log file written to the current working directory, replace `OUT` with `$PWD`.
 As above, you will also need to replace `DATA` with the absolite path to the directory containing your input BAM files.
@@ -357,19 +371,13 @@ As above, you will also need to replace `DATA` with the absolite path to the dir
 
 Singularity can be used to run Docker containers. This can be useful in some environments where Docker is not available (e.g. High Performance Computing systems).
 
-The principles are similar to using Docker, though some of the command line syntax is different. The example below shows how to run snvly on a tumour normal pair, assuming that the Docker container has been imported as `snvly_0.1.0.0.sif`.
-
-The container can be pulled from Docker hub:
+The principles are similar to using Docker, though some of the command line syntax is different. The example below shows how to run snvly on a tumour normal pair, assuming that the Docker container has been imported as `snvly_latest.sif`. Instructions for pulling the container using singularity are provided above.
 
 ```
-singularity pull docker://bjpop/snvly:0.1.0.0
+singularity exec --containall -B DATA:/bam snvly_latest.sif snvly --labels tumour normal -- /bam/tumour.bam /bam/normal.bam < sample.vcf > sample.snvly.csv
 ```
 
-```
-singularity exec --containall -B DATA:/bam snvly_0.1.0.0.sif snvly --labels tumour normal -- /bam/tumour.bam /bam/normal.bam < sample.vcf
-```
-
-As with the Docker example, `DATA` is the path to a directory on your local machine that contains the input BAM file.
+As with the Docker example, `DATA` is the path to a directory on your local machine that contains the input BAM files.
 
 # Bug reporting and feature requests
 
