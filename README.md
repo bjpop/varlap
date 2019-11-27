@@ -91,7 +91,7 @@ Alternatively, you can pull latest version of the Docker container from Docker H
 ```
 docker pull bjpop/snvly:latest
 ```
-Or, if you are using singularity, then you can pull the docker container like so:
+Or, if you are using Singularity, then you can pull the docker container like so:
 ```
 singularity pull docker://bjpop/snvly:latest
 ```
@@ -367,11 +367,11 @@ $ docker run -i -v DATA:/in -v OUT:/out snvly snvly --log /out/logfile.txt --lab
 Replace `OUT` with the absolute path of the directory to write the log file. For example, if you want the log file written to the current working directory, replace `OUT` with `$PWD`.
 As above, you will also need to replace `DATA` with the absolite path to the directory containing your input BAM files.
 
-## Usage with singularity
+## Usage with Singularity
 
 Singularity can be used to run Docker containers. This can be useful in some environments where Docker is not available (e.g. High Performance Computing systems).
 
-The principles are similar to using Docker, though some of the command line syntax is different. The example below shows how to run snvly on a tumour normal pair, assuming that the Docker container has been imported as `snvly_latest.sif`. Instructions for pulling the container using singularity are provided above.
+The principles are similar to using Docker, though some of the command line syntax is different. The example below shows how to run snvly on a tumour normal pair, assuming that the Docker container has been imported as `snvly_latest.sif`. Instructions for pulling the container using Singularity are provided above.
 
 ```
 singularity exec --containall -B DATA:/bam snvly_latest.sif snvly --labels tumour normal -- /bam/tumour.bam /bam/normal.bam < sample.vcf > sample.snvly.csv
