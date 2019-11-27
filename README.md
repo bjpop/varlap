@@ -54,7 +54,7 @@ Move into the repository directory:
 $ cd snvly
 ```
 
-Python 3 is required for this software.
+Python 3 (>= 3.6) is required for this software.
 
 Snvly can be installed using `pip` in a variety of ways (`$` indicates the command line prompt):
 
