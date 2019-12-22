@@ -14,21 +14,21 @@ false positives.
 
 
 setup(
-    name='snvly',
+    name='varlap',
     version='0.1.0.0',
     author='Bernie Pope',
     author_email='bjpope@unimelb.edu.au',
-    packages=['snvly'],
-    package_dir={'snvly': 'snvly'},
+    packages=['varlap'],
+    package_dir={'varlap': 'varlap'},
     entry_points={
-        'console_scripts': ['snvly = snvly.snvly:main',
-                           'snvly_outliers = snvly.snvly_outliers:main',
-                           'snvly_dist_plots = snvly.snvly_dist_plots:main', 
-                           'snvly_scatter_plots = snvly.snvly_scatter_plots:main',
-                           'snvly_depth = snvly.snvly_depth:main',
-                           'snvly_depth_plots = snvly.snvly_depth_plots:main']
+        'console_scripts': ['varlap = varlap.varlap:main',
+                           'varlap_outliers = varlap.varlap_outliers:main',
+                           'varlap_dist_plots = varlap.varlap_dist_plots:main', 
+                           'varlap_scatter_plots = varlap.varlap_scatter_plots:main',
+                           'varlap_depth = varlap.varlap_depth:main',
+                           'varlap_depth_plots = varlap.varlap_depth_plots:main']
     },
-    url='https://github.com/bjpop/snvly',
+    url='https://github.com/bjpop/varlap',
     license='LICENSE',
     description=('Check somatic SNVs against their germline support'),
     long_description=(LONG_DESCRIPTION),

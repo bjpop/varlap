@@ -6,7 +6,7 @@ License     : MIT
 Maintainer  : bjpope@unimelb.edu.au 
 Portability : POSIX
 
-Outlier detection for snvly
+Outlier detection for varlap
 '''
 
 from argparse import ArgumentParser
@@ -18,7 +18,7 @@ import pandas as pd
 
 EXIT_FILE_IO_ERROR = 1
 EXIT_COMMAND_LINE_ERROR = 2
-PROGRAM_NAME = "snvly_outliers"
+PROGRAM_NAME = "varlap_outliers"
 DEFAULT_STRINGENCY = 1.5
 
 
@@ -47,10 +47,10 @@ def parse_args():
     Returns Options object with command line argument values as attributes.
     Will exit the program on a command line error.
     '''
-    description = 'Compute outliers in snvly outputs'
+    description = 'Compute outliers in varlap outputs'
     parser = ArgumentParser(description=description)
     parser.add_argument(
-        'data',  metavar='DATA', type=str, help='Filepaths of snvly CSV results file')
+        'data',  metavar='DATA', type=str, help='Filepaths of varlap CSV results file')
     parser.add_argument(
         '--stringency',  default=DEFAULT_STRINGENCY, metavar='FLOAT', type=float,
         help=f'Stringency factor for detecting outliers, default={DEFAULT_STRINGENCY}')
