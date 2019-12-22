@@ -23,7 +23,6 @@ These are some examples of the kinds of information collected per variant:
 These features are computed for all reads overlapping the variant locus, and for those reads that contain only the reference and alt alleles.
 
 Varlap is also accompanied by some helpful auxilliary programs that can:
-* Produce summary plots of the computed data.
 * Detect outliers in selected features in the data.
 
 In the examples below, `$` indicates the command line prompt.
@@ -238,98 +237,6 @@ Example usage:
 
 ```
 $ varlap_outliers --stringency 3 --chroms '1' '2' '3' --features 'tumour all avg NM' 'tumour alt vaf' 'normal alt vaf' -- variants.varlap.csv > variants.varlap.outliers.csv
-```
-
-# Plotting outputs
-
-The varlap package provides two auxilliary programs for plotting aspects of its outputs:
-* varlap_dist_plots, for plotting distributions of selected parameters
-* varlap_scatter_plots, for plotting scatter plots comparing selected pairs of parameters
-
-These plots can be quite useful in getting an overview of the data, and for pointing to issues that might need further investgation (such as abnormal distributions).
-
-## Distribution plots
-
-`varlap_dist_plots` can be used to plot distributions of selected features from the output of `varlap` (columns), and can optionally produce
-box plots of key variables grouped by some other categorical feature (e.g. by chromosome or sample).
-
-Output plots are in PNG format and are written to files, which by default are written to the `dist_plots` output directory, however
-the user can choose a different name for the output directory if desired. If the output directory does not exist it will be created
-by `varlap_dist_plots`.
-
-```
-$ varlap_dist_plots -h
-usage: varlap_dist_plots [-h] [--outdir DIR] --features FEATURE [FEATURE ...]
-                        [--groups [GROUP [GROUP ...]]] [--version]
-                        [--log LOG_FILE]
-                        DATA
-
-Generate plots of varlap features
-
-positional arguments:
-  DATA                  Filepaths of varlap CSV results file
-
-optional arguments:
-  -h, --help            show this help message and exit
-  --outdir DIR          Name of output directory. Default=dist_plots
-  --features FEATURE [FEATURE ...]
-                        Features to plot
-  --groups [GROUP [GROUP ...]]
-                        Feature labels to group by
-  --version             show program's version number and exit
-  --log LOG_FILE        record program progress in LOG_FILE
-```
-
-Example usage:
-
-```
-$ varlap_dist_plots --features 'tumour all avg NM' 'tumour alt vaf' 'normal alt vaf' 'pos normalised' --groups chrom sample -- variants.varlap.csv
-```
-
-## Scatter plots
-
-`varlap_scatter_plots` can be used to plot scatters of pairs of selected (numeric) features from the output of `varlap` (columns). The user can optionally select other features to shade the data points in the plots. For example it might be useful to shade data points by their sample. Each pair of features to plot is specified by listing their names separated by a comma (with no additional spaces around the names).
-
-Output plots are in PNG format and are written to files, which by default are written to the `dist_plots` output directory, however
-the user can choose a different name for the output directory if desired. If the output directory does not exist it will be created
-by `varlap_dist_plots`.
-
-The user can adjust the transparency of the dots with the `--alpha` paramter, and the width of edge lines on the dots with the `--linewidth` parameter.
-
-```
-$ varlap_scatter_plots -h
-usage: varlap_scatter_plots [-h] [--outdir DIR] [--nolegend]
-                           [--hues FEATURE [FEATURE ...]] [--alpha ALPHA]
-                           [--linewidth WIDTH] --features FEATURE
-                           [FEATURE ...] [--version] [--log LOG_FILE]
-                           DATA
-
-Generate plots of varlap features
-
-positional arguments:
-  DATA                  Filepaths of varlap CSV results file
-
-optional arguments:
-  -h, --help            show this help message and exit
-  --outdir DIR          Name of output directory. Default=scatter_plots
-  --nolegend            Turn off the legend in the plot
-  --hues FEATURE [FEATURE ...]
-                        Name of features to use for colouring dots (e.g.
-                        "sample" "chrom")
-  --alpha ALPHA         Alpha value for plotting points (default: 0.3)
-  --linewidth WIDTH     Line width value for plotting points (default: 0)
-  --features FEATURE [FEATURE ...]
-                        Features to plot, format: feature1,feature2 (no spaces
-                        between feature names, e.g. "pos normalised","tumour
-                        depth")
-  --version             show program's version number and exit
-  --log LOG_FILE        record program progress in LOG_FILE
-```
-
-Example usage:
-
-```
-varlap_scatter_plots --hues 'sample' 'chrom' --features 'tumour alt vaf','normal alt vaf' 'pos normalised','tumour alt avg map qual' -- variants.varlap.csv
 ```
 
 # Running within the Docker container
