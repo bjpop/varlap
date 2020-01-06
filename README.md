@@ -1,13 +1,17 @@
 # Overview 
 
-Varlap is designed to compute various bits of information about SNVs from corresponding BAM files.
+Varlap is primarily a quality control tool for genetic variants arising from high throughput DNA sequencing, where the
+variants have been called by aligning DNA sequencing reads to a reference genome. It takes as input a set of DNA variants
+and one or more BAM files. Varlap considers genomic locus of each variant in each of the supplied
+BAM files and records information about the corresponding alignment context at that locus. For example, one of the metrics
+it calculates is the average edit distance of reads overlapping the variant locus. This can be a useful metric because
+regions with significantly higher average edit distance are more likely to contain erroneous variant calls. 
+Varlap outputs a CSV file containing one row per input variant, with columns recording the various computed metrics.
+Subsequent analysis of this output (such as outlier detection) can be used to identify potentially problematic variants and
+samples.
 
 Common use cases are to consider somatic variants in the context of tumour and normal alignments, or germline variants against normal alignments. 
 However, varlap is quite flexible and allows the use of any number of BAM files as input. 
-
-It is particularly intended for quality control checking of SNVs. For example, you can use the output of varlap
-to check for outliers in the data that might be indicative of errors. Therefore, many of the bits of information collected
-by varlap are often signs of things going wrong in the sequencing and alignment.
 
 These are some examples of the kinds of information collected per variant:
 * Base quality.
