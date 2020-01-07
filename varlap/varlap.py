@@ -13,14 +13,26 @@ import logging
 import pkg_resources
 import pysam
 import csv
+from collections import namedtuple
 from intervaltree import Interval, IntervalTree
 import os.path
 import pathlib
+
+'''
+Note: on the command line we allow the user to specify a desired "varclass"
+to indicate the class of variant they want to consider. This can be "SNV" or
+"INDEL" at the moment, but may be extended to other classes in the future.
+
+However, within the program we break the classes of variants down further into
+"vartype"s, which currently can be "SNV", "INS", "DEL". In this case "INS" and
+"DEL" vartypes belong to the varclass "INDEL".
+'''
 
 
 EXIT_FILE_IO_ERROR = 1
 EXIT_COMMAND_LINE_ERROR = 2
 PROGRAM_NAME = "varlap"
+VALID_VARIANT_TYPES = ["SNV", "INDEL"]
 
 
 try:
@@ -61,12 +73,14 @@ def parse_args():
     parser.add_argument(
         '--noheader', action='store_true', help='Suppress output header row')
     parser.add_argument('--version',
-                        action='version',
-                        version='%(prog)s ' + PROGRAM_VERSION)
+        action='version',
+        version='%(prog)s ' + PROGRAM_VERSION)
+    parser.add_argument('--varclass', required=True, metavar='TYPE', type=str,
+        choices=VALID_VARIANT_TYPES, help="Type of variants to consider: %(choices)s")
     parser.add_argument('--log',
-                        metavar='LOG_FILE',
-                        type=str,
-                        help='record program progress in LOG_FILE')
+        metavar='LOG_FILE',
+        type=str,
+        help='record program progress in LOG_FILE')
     return parser.parse_args()
 
 
@@ -93,26 +107,108 @@ def init_logging(log_filename):
         logging.info('command line: %s', ' '.join(sys.argv))
 
 
-def get_variants():
-    result = set()
+'''
+VCF docs on CHROM, POS, REF, ALT:
+
+CHROM - chromosome: An identifier from the reference genome or an angle-bracketed ID String (“<ID>”)
+pointing to a contig in the assembly file (cf. the ##assembly line in the header). All entries for a specific
+CHROM should form a contiguous block within the VCF file. The colon symbol (:) must be absent from all
+chromosome names to avoid parsing errors when dealing with breakends. (String, no white-space permitted,
+Required).
+
+POS - position: The reference position, with the 1st base having position 1. Positions are sorted numerically,
+in increasing order, within each reference sequence CHROM. It is permitted to have multiple records with the
+same POS. Telomeres are indicated by using positions 0 or N+1, where N is the length of the corresponding
+chromosome or contig. (Integer, Required)
+
+REF - reference base(s): Each base must be one of A,C,G,T,N (case insensitive). Multiple bases are permitted.
+The value in the POS field refers to the position of the first base in the String. For simple insertions and
+deletions in which either the REF or one of the ALT alleles would otherwise be null/empty, the REF and ALT
+Strings must include the base before the event (which must be reflected in the POS field), unless the event
+occurs at position 1 on the contig in which case it must include the base after the event; this padding base is
+not required (although it is permitted) for e.g. complex substitutions or other events where all alleles have at
+least one base represented in their Strings. If any of the ALT alleles is a symbolic allele (an angle-bracketed
+ID String “<ID>”) then the padding base is required and POS denotes the coordinate of the base preceding
+the polymorphism. Tools processing VCF files are not required to preserve case in the allele Strings. (String,
+Required).
+
+ALT - alternate base(s): Comma separated list of alternate non-reference alleles. These alleles do not have to
+be called in any of the samples. Options are base Strings made up of the bases A,C,G,T,N,*, (case insensitive)
+or an angle-bracketed ID String (“<ID>”) or a breakend replacement string as described in the section on
+breakends. The ‘*’ allele is reserved to indicate that the allele is missing due to a upstream deletion. If there
+are no alternative alleles, then the missing value should be used. Tools processing VCF files are not required
+to preserve case in the allele String, except for IDs, which are case sensitive. (String; no whitespace, commas,
+or angle-brackets are permitted in the ID String itself)
+
+'''
+
+VARIANT = namedtuple("VARIANT", ["chrom", "pos", "ref", "alt", "vartype"])
+
+def get_variants_vcf(varclass):
+    '''Read variants from input VCF file, yield one at a time'''
+    total_variants_in_input = 0
+    num_variants_analysed = 0
     for line in sys.stdin:
         if line.startswith('#'):
             continue
+        total_variants_in_input += 1
         fields = line.strip().split()
+        # Technically VCF requires the first 8 fields to be defined, but we want to be as liberal
+        # as possible in accepting inputs.
         if len(fields) >= 5:
             chrom, pos, _id, ref, alt = fields[:5]
-            if ref in VALID_DNA_BASES and alt in VALID_DNA_BASES:
-                pos = int(pos)
-                result.add((chrom, pos, ref, alt))
-            else:
-                logging.warning(f"Skipping variant: {chrom}:{pos},{ref}>{alt}")
-    logging.info(f"Read {len(result)} variants")
-    return sorted(result)
+            pos = int(pos)
+            # We only yield variant types that are included in the command line varclass
+            # for further consideration
+            for biallelic_var in decompose_variants(chrom, pos, ref, alt):
+                if (varclass == "SNV" and biallelic_var.vartype == "SNV") or \
+                   (varclass == "INDEL" and biallelic_var.vartype in ["INS", "DEL"]):
+                    num_variants_analysed += 1
+                    yield biallelic_var
+        else:
+            logging.warning(f"Skipping badly formatted variant: {line}")
+    num_variants_skipped = total_variants_in_input - num_variants_analysed
+    logging.info(f"Total variants in input: {total_variants_in_input}")
+    logging.info(f"Num variants kept for analysis: {num_variants_analysed}")
+    logging.info(f"Num skipped: {num_variants_skipped}")
+
+
+def get_var_type(ref, alt):
+    if len(ref) == len(alt):
+        return "SNV"
+    elif len(ref) > len(alt):
+        return "DEL"
+    elif len(alt) > len(ref):
+        return "INS"
+    else:
+        logging.warning(f"Cannot determine the type of variant with ref: {ref} and alt: {alt}")
+
+
+def is_simple_SNV_indel(alt):
+    '''Check if the alternative allele is a simple SNV or INDEL, by
+    seeing if it only contains valid DNA bases (including N)'''
+    return set(alt).issubset(VALID_DNA_BASES) 
+
+
+def decompose_variants(chrom, pos, ref, alt):
+    '''Process variants with multiple alternative alleles into a series of biallelic variants, and assign a type
+    to the variants (e.g.) SNV, INS, DEL''' 
+    alt_fields = alt.split(",")
+    for this_alt in alt_fields:
+        this_alt = alt.strip()
+        if is_simple_SNV_indel(this_alt):
+            this_var_type = get_var_type(ref, alt)
+            yield VARIANT(chrom=chrom, pos=pos, ref=ref, alt=this_alt, vartype=this_var_type) 
+        else:
+            logging.warning(f"Skipping non-simple variant: {chrom},{pos},{ref},{this_alt}")
 
 
 def write_header(options, bam_labels, regions):
-    header_general = ["chrom", "pos", "ref", "alt", "pos normalised", "sample"]
-    bam_headers = [label + " " + field for label in bam_labels for field in LocusFeatures.fields]
+    header_general = ["chrom", "pos", "ref", "alt", "type", "pos normalised", "sample"]
+    if options.varclass == "SNV":
+        bam_headers = [label + " " + field for label in bam_labels for field in LocusFeaturesSNV.fields]
+    elif options.varclass == "INDEL":
+        bam_headers = [label + " " + field for label in bam_labels for field in LocusFeaturesINDEL.fields]
     if not options.noheader:
         header_regions = []
         if regions is not None:
@@ -164,26 +260,28 @@ def get_chrom_pos_fraction(readers, chrom, pos):
         return ''
 
 
-def process_variants_bams(options, regions, variants):
+#def process_variants_bams(options, regions, variants):
+def process_variants_bams(options, regions):
     bam_labels = get_bam_labels(options.labels, options.bams)
-    bam_readers = [BamReader(filepath) for filepath in options.bams]
+    bam_readers = [BamReader(filepath, options.varclass) for filepath in options.bams]
     write_header(options, bam_labels, regions)
-    for chrom, pos, ref, alt in variants:
+    #for chrom, pos, ref, alt, vartype in variants:
+    for chrom, pos, ref, alt, vartype in get_variants_vcf(options.varclass):
         pos_normalised = get_chrom_pos_fraction(bam_readers, chrom, pos)
         region_counts = get_variant_region_intersections(regions, chrom, pos)
-        bams_features = [reader.variant_features(chrom, pos, ref, alt) for reader in bam_readers]
-        write_output_row(chrom, pos, ref, alt, pos_normalised, options.sample, region_counts, bams_features)
+        bams_features = [reader.variant_features(chrom, pos, ref, alt, vartype) for reader in bam_readers]
+        write_output_row(chrom, pos, ref, alt, vartype, pos_normalised, options.sample, region_counts, bams_features)
     for reader in bam_readers:
         reader.close()
 
 
-def write_output_row(chrom, pos, ref, alt,  pos_normalised, sample, regions, bam_features):
+def write_output_row(chrom, pos, ref, alt, vartype, pos_normalised, sample, regions, bam_features):
     row_bams = [str(x) for bam in bam_features for x in bam.as_list()]
-    row = [chrom, str(pos), ref, alt, str(pos_normalised), sample] + regions + row_bams 
+    row = [chrom, str(pos), ref, alt, vartype, str(pos_normalised), sample] + regions + row_bams 
     print(",".join(row))
  
 
-VALID_DNA_BASES = "ATGCN"
+VALID_DNA_BASES = set("ATGCN")
 
 class ReadFeatures(object):
 
@@ -273,7 +371,38 @@ class BaseCounts(object):
         return [total_depth, self.A, self.T, self.G, self.C, self.N, ref_count, alt_count, alt_vaf]
 
 
-class LocusFeatures(object):
+class LocusFeaturesINDEL(object):
+    fields = ["all " + x for x in ReadFeatures.fields]
+
+    '''
+    fields = ["ref " + x for x in ReadFeatures.fields] + \
+             ["alt " + x for x in ReadFeatures.fields] + \
+             ["all " + x for x in ReadFeatures.fields]
+    '''
+
+    def __init__(self, ref, alt):
+        self.ref = ref
+        self.alt = alt
+        # features where the read contains the reference base at this position
+        #self.ref_read_features = ReadFeatures()
+        # features where the read contains the alternative base at this position
+        #self.alt_read_features = ReadFeatures()
+        # features for all reads that overlap this position, regardless of the base
+        self.all_read_features = ReadFeatures()
+
+    def count(self, read):
+        self.all_read_features.count(read)
+
+    def as_list(self):
+        return self.all_read_features.as_list()
+        '''
+        return self.base_counts.as_list() + \
+               self.ref_read_features.as_list() + \
+               self.alt_read_features.as_list() + \
+               self.all_read_features.as_list()
+        '''
+
+class LocusFeaturesSNV(object):
     fields = BaseCounts.fields + \
              ["ref " + x for x in ReadFeatures.fields] + \
              ["alt " + x for x in ReadFeatures.fields] + \
@@ -315,16 +444,20 @@ class LocusFeatures(object):
 MAX_PILEUP_DEPTH = 1000000000
 
 class BamReader(object):
-    def __init__(self, filepath):
+    def __init__(self, filepath, varclass):
         logging.info(f"Reading BAM file: {filepath}")
         resolved_path = os.path.realpath(filepath)
         logging.info(f"Resolved filepath to: {resolved_path}")
         self.samfile = pysam.AlignmentFile(resolved_path, "rb")
+        self.varclass = varclass 
 
     # pos is expected to be 1-based 
-    def variant_features(self, chrom, pos, ref, alt):
+    def variant_features(self, chrom, pos, ref, alt, this_vartype):
         zero_based_pos = pos - 1
-        features = LocusFeatures(ref, alt)
+        if this_vartype == "SNV" and self.varclass == "SNV":
+            features = LocusFeaturesSNV(ref, alt)
+        elif this_vartype in ["INS", "DEL"] and self.varclass == "INDEL":
+            features = LocusFeaturesINDEL(ref, alt)
         for pileupcolumn in self.samfile.pileup(chrom, zero_based_pos, zero_based_pos+1,
                                                truncate=True, stepper='samtools',
                                                ignore_overlaps=False, ignore_orphans=True,
@@ -410,9 +543,10 @@ def main():
     options = parse_args()
     init_logging(options.log)
     # variants are sorted
-    variants = get_variants()
+    #variants = get_variants_vcf(options.vartype)
     regions = get_regions(options.regions)
-    process_variants_bams(options, regions, variants)
+    #process_variants_bams(options, regions, variants)
+    process_variants_bams(options, regions)
     logging.info("Completed")
 
 
