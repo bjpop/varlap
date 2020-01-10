@@ -31,8 +31,11 @@ However, within the program we break the classes of variants down further into
 
 EXIT_FILE_IO_ERROR = 1
 EXIT_COMMAND_LINE_ERROR = 2
+EXIT_BAD_FILE_FORMAT = 3
 PROGRAM_NAME = "varlap"
 VALID_VARIANT_TYPES = ["SNV", "INDEL"]
+DEFAULT_INPUT_FILE_FORMAT = "CSV"
+VALID_INPUT_FILE_FORMATS = ["CSV", "TSV", "VCF"]
 
 
 try:
@@ -71,18 +74,20 @@ def parse_args():
     parser.add_argument(
         '--regions', required=False, metavar='REGIONS', type=str, help='Filepath of genomic regions-of-interest in BED format')
     parser.add_argument(
+        '--format', required=False, metavar='FORMAT', type=str, default=DEFAULT_INPUT_FILE_FORMAT, choices=VALID_INPUT_FILE_FORMATS,
+        help='File format of input variants file. Options: %(choices)s. Default: %(default)s')
+    parser.add_argument(
         '--noheader', action='store_true', help='Suppress output header row')
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + PROGRAM_VERSION)
     parser.add_argument('--varclass', required=True, metavar='TYPE', type=str,
-        choices=VALID_VARIANT_TYPES, help="Type of variants to consider: %(choices)s")
+        choices=VALID_VARIANT_TYPES, help="Type of variants to consider. Options: %(choices)s")
     parser.add_argument('--log',
         metavar='LOG_FILE',
         type=str,
         help='record program progress in LOG_FILE')
     return parser.parse_args()
-
 
 
 def init_logging(log_filename):
@@ -144,29 +149,55 @@ or angle-brackets are permitted in the ID String itself)
 
 VARIANT = namedtuple("VARIANT", ["chrom", "pos", "ref", "alt", "vartype"])
 
-def get_variants_vcf(varclass):
-    '''Read variants from input VCF file, yield one at a time'''
-    total_variants_in_input = 0
-    num_variants_analysed = 0
-    for line in sys.stdin:
+def vcf_reader(file):
+    for line in file:
         if line.startswith('#'):
             continue
-        total_variants_in_input += 1
         fields = line.strip().split()
         # Technically VCF requires the first 8 fields to be defined, but we want to be as liberal
         # as possible in accepting inputs.
+        chrom, pos, _id, ref, alt = fields[:5]
         if len(fields) >= 5:
             chrom, pos, _id, ref, alt = fields[:5]
             pos = int(pos)
-            # We only yield variant types that are included in the command line varclass
-            # for further consideration
-            for biallelic_var in decompose_variants(chrom, pos, ref, alt):
-                if (varclass == "SNV" and biallelic_var.vartype == "SNV") or \
-                   (varclass == "INDEL" and biallelic_var.vartype in ["INS", "DEL"]):
-                    num_variants_analysed += 1
-                    yield biallelic_var
+            yield chrom, pos, ref, alt
         else:
-            logging.warning(f"Skipping badly formatted variant: {line}")
+            logging.warning(f"Skipping input row: {line}")
+
+
+def csv_tsv_reader(file, format="CSV"):
+    if format == "CSV":
+        reader = csv.DictReader(file)
+    elif format == "TSV":
+        reader = csv.DictReader(file, delimiter="\t")
+    else:
+        exit_with_error(f"Unknown file format: {format}", EXIT_BAD_FILE_FORMAT)
+    for row in reader:
+        try:
+            chrom = row['chrom']
+            pos = int(row['pos'])
+            ref = row['ref']
+            alt = row['alt']
+            yield chrom, pos, ref, alt
+        except:
+            logging.warning(f"Skipping input row: {row}")
+
+def is_desired_type(varclass, vartype):
+    return (varclass == "SNV" and vartype == "SNV" or
+            varclass == "INDEL" and vartype in ["INS", "DEL"])
+
+def get_variants(varclass, reader):
+    '''Read variants from input VCF file, yield one at a time'''
+    total_variants_in_input = 0
+    num_variants_analysed = 0
+    for chrom, pos, ref, alt in reader: 
+        total_variants_in_input += 1
+        # We only yield variant types that are included in the command line varclass
+        # for further consideration
+        for biallelic_var in decompose_variants(chrom, pos, ref, alt):
+            if is_desired_type(varclass, biallelic_var.vartype): 
+                num_variants_analysed += 1
+                yield biallelic_var
     num_variants_skipped = total_variants_in_input - num_variants_analysed
     logging.info(f"Total variants in input: {total_variants_in_input}")
     logging.info(f"Num variants kept for analysis: {num_variants_analysed}")
@@ -260,13 +291,17 @@ def get_chrom_pos_fraction(readers, chrom, pos):
         return ''
 
 
-#def process_variants_bams(options, regions, variants):
 def process_variants_bams(options, regions):
     bam_labels = get_bam_labels(options.labels, options.bams)
     bam_readers = [BamReader(filepath, options.varclass) for filepath in options.bams]
     write_header(options, bam_labels, regions)
-    #for chrom, pos, ref, alt, vartype in variants:
-    for chrom, pos, ref, alt, vartype in get_variants_vcf(options.varclass):
+    if options.format == 'VCF':
+        variants_reader = vcf_reader
+    elif options.format == 'CSV':
+        variants_reader = lambda file: csv_tsv_reader(file, format="CSV")
+    elif options.format == 'TSV':
+        variants_reader = lambda file: csv_tsv_reader(file, format="TSV")
+    for chrom, pos, ref, alt, vartype in get_variants(options.varclass, variants_reader(sys.stdin)):
         pos_normalised = get_chrom_pos_fraction(bam_readers, chrom, pos)
         region_counts = get_variant_region_intersections(regions, chrom, pos)
         bams_features = [reader.variant_features(chrom, pos, ref, alt, vartype) for reader in bam_readers]
