@@ -17,6 +17,7 @@ from collections import namedtuple
 from intervaltree import Interval, IntervalTree
 import os.path
 import pathlib
+from copy import copy
 
 '''
 Note: on the command line we allow the user to specify a desired "varclass"
@@ -147,7 +148,66 @@ or angle-brackets are permitted in the ID String itself)
 
 '''
 
-VARIANT = namedtuple("VARIANT", ["chrom", "pos", "ref", "alt", "vartype"])
+#VARIANT = namedtuple("VARIANT", ["chrom", "pos", "ref", "alt", "vartype"])
+
+class VariantReader(object):
+    def __init__(self, file, file_format, varclass):
+        self.file = file
+        self.file_format = file_format
+        self.varclass = varclass
+        if file_format == "VCF":
+            self.reader = vcf_reader(file)
+            self.fieldnames = ["chrom", "pos", "ref", "alt", "vartype"]
+        elif file_format == "CSV":
+            self.reader = csv_tsv_reader(file, "CSV")
+            self.fieldnames = self.reader.fieldnames + ["vartype"]
+        elif file_format == "TSV":
+            self.reader = csv_tsv_reader(file, "TSV")
+            self.fieldnames = self.reader.fieldnames + ["vartype"]
+        else:
+            exit_with_error(f"Unknown file format: {format}", EXIT_BAD_FILE_FORMAT)
+        self.total_variants_in_input = 0
+        self.num_variants_analysed = 0
+        self.num_variants_skipped = 0
+
+
+    def get_variants(self):
+        '''Read variants from input VCF file, yield one at a time'''
+        for input_row in self.reader: 
+            self.total_variants_in_input += 1
+            if is_valid_input_row(input_row):
+                this_ref = input_row["ref"]
+                # allow possibly multiple alts in the same variant, split them into separate alleles
+                alts = input_row["alt"].split(",")
+                for this_alt in alts:
+                    if is_simple_SNV_indel(this_alt):
+                        this_var_type = get_var_type(this_ref, this_alt)
+                        # We only yield variant types that are included in the command line varclass
+                        # for further consideration
+                        if is_desired_type(self.varclass, this_var_type):
+                            output_row = copy(input_row)
+                            output_row["alt"] = this_alt
+                            output_row["pos"] = int(input_row["pos"])
+                            output_row["vartype"] = this_var_type
+                            self.num_variants_analysed += 1
+                            yield output_row
+                        else:
+                            logging.info(f"Skipping variant of unwanted type: {this_var_type} {dict(input_row)}")
+                    else:
+                        logging.warning(f"Skipping non-simple variant: {chrom},{pos},{ref},{mono_alt}")
+            else:
+                logging.warning(f"Skipping invalid input row: {dict(input_row)}")
+
+    def log_totals(self):
+        self.num_variants_skipped = self.total_variants_in_input - self.num_variants_analysed
+        logging.info(f"Total variants in input: {self.total_variants_in_input}")
+        logging.info(f"Num variants kept for analysis: {self.num_variants_analysed}")
+        logging.info(f"Num skipped: {self.num_variants_skipped}")
+
+REQUIRED_INPUT_VARIANT_FIELDS = set(["chrom", "pos", "ref", "alt"])
+
+def is_valid_input_row(row):
+    return set(row.keys()).issuperset(REQUIRED_INPUT_VARIANT_FIELDS)
 
 def vcf_reader(file):
     for line in file:
@@ -156,11 +216,9 @@ def vcf_reader(file):
         fields = line.strip().split()
         # Technically VCF requires the first 8 fields to be defined, but we want to be as liberal
         # as possible in accepting inputs.
-        chrom, pos, _id, ref, alt = fields[:5]
         if len(fields) >= 5:
             chrom, pos, _id, ref, alt = fields[:5]
-            pos = int(pos)
-            yield chrom, pos, ref, alt
+            yield {"chrom": chrom, "pos": pos, "ref": ref, "alt": alt}
         else:
             logging.warning(f"Skipping input row: {line}")
 
@@ -172,36 +230,11 @@ def csv_tsv_reader(file, format="CSV"):
         reader = csv.DictReader(file, delimiter="\t")
     else:
         exit_with_error(f"Unknown file format: {format}", EXIT_BAD_FILE_FORMAT)
-    for row in reader:
-        try:
-            chrom = row['chrom']
-            pos = int(row['pos'])
-            ref = row['ref']
-            alt = row['alt']
-            yield chrom, pos, ref, alt
-        except:
-            logging.warning(f"Skipping input row: {row}")
+    return reader
 
 def is_desired_type(varclass, vartype):
     return (varclass == "SNV" and vartype == "SNV" or
             varclass == "INDEL" and vartype in ["INS", "DEL"])
-
-def get_variants(varclass, reader):
-    '''Read variants from input VCF file, yield one at a time'''
-    total_variants_in_input = 0
-    num_variants_analysed = 0
-    for chrom, pos, ref, alt in reader: 
-        total_variants_in_input += 1
-        # We only yield variant types that are included in the command line varclass
-        # for further consideration
-        for biallelic_var in decompose_variants(chrom, pos, ref, alt):
-            if is_desired_type(varclass, biallelic_var.vartype): 
-                num_variants_analysed += 1
-                yield biallelic_var
-    num_variants_skipped = total_variants_in_input - num_variants_analysed
-    logging.info(f"Total variants in input: {total_variants_in_input}")
-    logging.info(f"Num variants kept for analysis: {num_variants_analysed}")
-    logging.info(f"Num skipped: {num_variants_skipped}")
 
 
 def get_var_type(ref, alt):
@@ -221,21 +254,10 @@ def is_simple_SNV_indel(alt):
     return set(alt).issubset(VALID_DNA_BASES) 
 
 
-def decompose_variants(chrom, pos, ref, alt):
-    '''Process variants with multiple alternative alleles into a series of biallelic variants, and assign a type
-    to the variants (e.g.) SNV, INS, DEL''' 
-    alt_fields = alt.split(",")
-    for this_alt in alt_fields:
-        this_alt = alt.strip()
-        if is_simple_SNV_indel(this_alt):
-            this_var_type = get_var_type(ref, alt)
-            yield VARIANT(chrom=chrom, pos=pos, ref=ref, alt=this_alt, vartype=this_var_type) 
-        else:
-            logging.warning(f"Skipping non-simple variant: {chrom},{pos},{ref},{this_alt}")
 
 
-def write_header(options, bam_labels, regions):
-    header_general = ["chrom", "pos", "ref", "alt", "type", "pos normalised", "sample"]
+def write_header(options, variant_fieldnames, bam_labels, regions):
+    header_general = variant_fieldnames + ["pos normalised", "sample"]
     if options.varclass == "SNV":
         bam_headers = [label + " " + field for label in bam_labels for field in LocusFeaturesSNV.fields]
     elif options.varclass == "INDEL":
@@ -248,7 +270,9 @@ def write_header(options, bam_labels, regions):
         print(",".join(header))
 
 
-def get_variant_region_intersections(regions, chrom, pos):
+def get_variant_region_intersections(regions, variant):
+    chrom = variant["chrom"]
+    pos = variant["pos"]
     result = []
     if regions is not None:
         overlaps = {}
@@ -278,7 +302,9 @@ def get_bam_labels(labels, bam_files):
 
 # Return the variant position as a fraction of the entire chromosome
 # length. 
-def get_chrom_pos_fraction(readers, chrom, pos):
+def get_chrom_pos_fraction(readers, variant):
+    chrom = variant["chrom"]
+    pos = variant["pos"]
     # We assume (require) that all BAM files are aligned
     # to the same reference genome, so it doesn't matter which
     # one we use to decide where in the chromosome a position appears.
@@ -290,29 +316,28 @@ def get_chrom_pos_fraction(readers, chrom, pos):
     else:
         return ''
 
+def variant_as_list(variant, fieldnames):
+    return [str(variant[f]) for f in fieldnames]
 
 def process_variants_bams(options, regions):
     bam_labels = get_bam_labels(options.labels, options.bams)
     bam_readers = [BamReader(filepath, options.varclass) for filepath in options.bams]
-    write_header(options, bam_labels, regions)
-    if options.format == 'VCF':
-        variants_reader = vcf_reader
-    elif options.format == 'CSV':
-        variants_reader = lambda file: csv_tsv_reader(file, format="CSV")
-    elif options.format == 'TSV':
-        variants_reader = lambda file: csv_tsv_reader(file, format="TSV")
-    for chrom, pos, ref, alt, vartype in get_variants(options.varclass, variants_reader(sys.stdin)):
-        pos_normalised = get_chrom_pos_fraction(bam_readers, chrom, pos)
-        region_counts = get_variant_region_intersections(regions, chrom, pos)
-        bams_features = [reader.variant_features(chrom, pos, ref, alt, vartype) for reader in bam_readers]
-        write_output_row(chrom, pos, ref, alt, vartype, pos_normalised, options.sample, region_counts, bams_features)
+    variant_reader = VariantReader(sys.stdin, options.format, options.varclass)
+    write_header(options, variant_reader.fieldnames, bam_labels, regions)
+    for variant in variant_reader.get_variants():
+        pos_normalised = get_chrom_pos_fraction(bam_readers, variant)
+        region_counts = get_variant_region_intersections(regions, variant)
+        bams_features = [bam_reader.variant_features(variant) for bam_reader in bam_readers]
+        output_variant = variant_as_list(variant, variant_reader.fieldnames)
+        write_output_row(output_variant, pos_normalised, options.sample, region_counts, bams_features)
+    variant_reader.log_totals()
     for reader in bam_readers:
         reader.close()
 
 
-def write_output_row(chrom, pos, ref, alt, vartype, pos_normalised, sample, regions, bam_features):
+def write_output_row(variant, pos_normalised, sample, regions, bam_features):
     row_bams = [str(x) for bam in bam_features for x in bam.as_list()]
-    row = [chrom, str(pos), ref, alt, vartype, str(pos_normalised), sample] + regions + row_bams 
+    row = variant + [str(pos_normalised), sample] + regions + row_bams 
     print(",".join(row))
  
 
@@ -487,11 +512,17 @@ class BamReader(object):
         self.varclass = varclass 
 
     # pos is expected to be 1-based 
-    def variant_features(self, chrom, pos, ref, alt, this_vartype):
+    #def variant_features(self, chrom, pos, ref, alt, this_vartype):
+    def variant_features(self, variant):
+        chrom = variant["chrom"]
+        pos = variant["pos"]
+        ref = variant["ref"]
+        alt = variant["alt"]
+        vartype = variant["vartype"] 
         zero_based_pos = pos - 1
-        if this_vartype == "SNV" and self.varclass == "SNV":
+        if vartype == "SNV" and self.varclass == "SNV":
             features = LocusFeaturesSNV(ref, alt)
-        elif this_vartype in ["INS", "DEL"] and self.varclass == "INDEL":
+        elif vartype in ["INS", "DEL"] and self.varclass == "INDEL":
             features = LocusFeaturesINDEL(ref, alt)
         for pileupcolumn in self.samfile.pileup(chrom, zero_based_pos, zero_based_pos+1,
                                                truncate=True, stepper='samtools',
@@ -577,10 +608,7 @@ def main():
     "Orchestrate the execution of the program"
     options = parse_args()
     init_logging(options.log)
-    # variants are sorted
-    #variants = get_variants_vcf(options.vartype)
     regions = get_regions(options.regions)
-    #process_variants_bams(options, regions, variants)
     process_variants_bams(options, regions)
     logging.info("Completed")
 
