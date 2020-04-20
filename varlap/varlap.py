@@ -78,6 +78,9 @@ def parse_args():
         '--format', required=False, metavar='FORMAT', type=str, default=DEFAULT_INPUT_FILE_FORMAT, choices=VALID_INPUT_FILE_FORMATS,
         help='File format of input variants file. Options: %(choices)s. Default: %(default)s')
     parser.add_argument(
+        '--maxindelsize', required=False, metavar='SIZE', type=int,
+        help='Maximum size of indels to consider. Indels above this size will be excluded from analysis and output.')
+    parser.add_argument(
         '--noheader', action='store_true', help='Suppress output header row')
     parser.add_argument('--version',
         action='version',
@@ -148,13 +151,14 @@ or angle-brackets are permitted in the ID String itself)
 
 '''
 
-#VARIANT = namedtuple("VARIANT", ["chrom", "pos", "ref", "alt", "vartype"])
+# XXX support for DELINS
 
 class VariantReader(object):
-    def __init__(self, file, file_format, varclass):
+    def __init__(self, file, file_format, varclass, max_indel_size=None):
         self.file = file
         self.file_format = file_format
         self.varclass = varclass
+        self.max_indel_size = max_indel_size
         if file_format == "VCF":
             self.reader = vcf_reader(file)
             self.fieldnames = ["chrom", "pos", "ref", "alt", "vartype"]
@@ -180,21 +184,14 @@ class VariantReader(object):
                 # allow possibly multiple alts in the same variant, split them into separate alleles
                 alts = input_row["alt"].split(",")
                 for this_alt in alts:
-                    if is_simple_SNV_indel(this_alt):
-                        this_var_type = get_var_type(this_ref, this_alt)
-                        # We only yield variant types that are included in the command line varclass
-                        # for further consideration
-                        if is_desired_type(self.varclass, this_var_type):
-                            output_row = copy(input_row)
-                            output_row["alt"] = this_alt
-                            output_row["pos"] = int(input_row["pos"])
-                            output_row["vartype"] = this_var_type
-                            self.num_variants_analysed += 1
-                            yield output_row
-                        else:
-                            logging.info(f"Skipping variant of unwanted type: {this_var_type} {dict(input_row)}")
-                    else:
-                        logging.warning(f"Skipping non-simple variant: {chrom},{pos},{ref},{mono_alt}")
+                    this_var_type = get_var_type(this_ref, this_alt)
+                    if is_acceptable_variant(dict(input_row), self.varclass, this_var_type, this_ref, this_alt, self.max_indel_size):
+                        output_row = copy(input_row)
+                        output_row["alt"] = this_alt
+                        output_row["pos"] = int(input_row["pos"])
+                        output_row["vartype"] = this_var_type
+                        self.num_variants_analysed += 1
+                        yield output_row
             else:
                 logging.warning(f"Skipping invalid input row: {dict(input_row)}")
 
@@ -202,7 +199,66 @@ class VariantReader(object):
         self.num_variants_skipped = self.total_variants_in_input - self.num_variants_analysed
         logging.info(f"Total variants in input: {self.total_variants_in_input}")
         logging.info(f"Num variants kept for analysis: {self.num_variants_analysed}")
-        logging.info(f"Num skipped: {self.num_variants_skipped}")
+        logging.info(f"Num variants skipped: {self.num_variants_skipped}")
+
+
+# Check if an input variant is acceptable for this analysis and valid
+# The purpose of this method is to reject and thus skup any input variants
+# that we cannot intepret within the current analysis
+def is_acceptable_variant(row, varclass, vartype, ref, alt, max_indel_size):
+    if not is_only_DNA_bases(ref) or not is_only_DNA_bases(alt):
+        # ref and alt must only consist of DNA bases
+        logging.info(f"Skipping variant with non-DNA bases: {row}")
+        return False
+    if not is_desired_type(varclass, vartype):
+        # this particular variant must be of a type that is compatible
+        # with the varclass specified on the command line, (SNV, INDEL(
+        logging.info(f"Skipping variant of unwanted type: {vartype} {row}")
+        return False
+    if not is_within_max_size(varclass, max_indel_size, ref, alt):
+        # The variant must not be longer than the maximum size, if specified
+        logging.info(f"Skipping variant that is too large {row}")
+        return False
+    if varclass == "INDEL" and not is_valid_indel(ref, alt):
+        # Check INDELs for appropriate formatting
+        logging.info(f"Skipping invalid INDEL: {row}")
+        return False
+    return True
+    
+VALID_DNA_BASES = set("ATGC")
+    
+def is_only_DNA_bases(sequence):
+    return set(sequence.upper()).issubset(VALID_DNA_BASES) 
+
+
+# Check that an input variant is within some size bound. This is normally
+# only relevant for INDELs where the max_indel_size can be set on
+# the command line. However, for completeness we also check that SNVs
+# are indeed the expected size of 1 DNA base.
+def is_within_max_size(varclass, max_indel_size, ref, alt):
+    if varclass == "SNV":
+        return len(ref) == 1 and len(alt) == 1
+    elif varclass == "INDEL" and max_indel_size is not None:
+        this_indel_size = abs(len(ref) - len(alt))
+        return this_indel_size <= max_indel_size
+    return True
+
+# Check that the INDEL is specified in a way that we can interpet:
+# there must be at least 1 context base, the shortest of ref and alt
+# must be a prefix of the other. They must not have the same length.
+def is_valid_indel(ref, alt):
+    ref_len = len(ref)
+    alt_len = len(alt)
+    if ref_len < alt_len:
+        shortest = ref
+        longest = alt
+    elif alt_len < ref_len:
+        shortest = alt
+        longest = ref
+    else:
+        # ref and alt are the same length, not currently supported 
+        return False
+    return ref_len >= 1 and alt_len >= 1 and longest.startswith(shortest)
 
 REQUIRED_INPUT_VARIANT_FIELDS = set(["chrom", "pos", "ref", "alt"])
 
@@ -238,7 +294,7 @@ def is_desired_type(varclass, vartype):
 
 
 def get_var_type(ref, alt):
-    if len(ref) == len(alt):
+    if len(ref) == 1 and len(alt) == 1:
         return "SNV"
     elif len(ref) > len(alt):
         return "DEL"
@@ -246,13 +302,7 @@ def get_var_type(ref, alt):
         return "INS"
     else:
         logging.warning(f"Cannot determine the type of variant with ref: {ref} and alt: {alt}")
-
-
-def is_simple_SNV_indel(alt):
-    '''Check if the alternative allele is a simple SNV or INDEL, by
-    seeing if it only contains valid DNA bases (including N)'''
-    return set(alt).issubset(VALID_DNA_BASES) 
-
+        return "UNKNOWN"
 
 
 
@@ -322,7 +372,7 @@ def variant_as_list(variant, fieldnames):
 def process_variants_bams(options, regions):
     bam_labels = get_bam_labels(options.labels, options.bams)
     bam_readers = [BamReader(filepath, options.varclass) for filepath in options.bams]
-    variant_reader = VariantReader(sys.stdin, options.format, options.varclass)
+    variant_reader = VariantReader(sys.stdin, options.format, options.varclass, options.maxindelsize)
     write_header(options, variant_reader.fieldnames, bam_labels, regions)
     for variant in variant_reader.get_variants():
         pos_normalised = get_chrom_pos_fraction(bam_readers, variant)
@@ -341,13 +391,12 @@ def write_output_row(variant, pos_normalised, sample, regions, bam_features):
     print(",".join(row))
  
 
-VALID_DNA_BASES = set("ATGCN")
 
 class ReadFeatures(object):
 
     fields = ["avg NM", "avg base qual", "avg map qual",
               "avg align len", "avg clipped bases", "avg indel bases",
-              "fwd strand", "rev strand", "normalised read position"]
+              "fwd strand", "rev strand", "supplementary", "normalised read position"]
 
     def __init__(self):
         self.nm = 0
@@ -358,6 +407,7 @@ class ReadFeatures(object):
         self.indel = 0
         self.forward_strand = 0
         self.reverse_strand = 0
+        self.supplementary = 0
         self.normalised_read_position = 0 
         self.num_reads = 0
 
@@ -383,6 +433,8 @@ class ReadFeatures(object):
             self.reverse_strand += 1
         else:
             self.forward_strand += 1
+        if alignment.is_supplementary:
+            self.supplementary += 1
 
     def as_list(self):
         # normalise the results to the number of observed reads in total
@@ -390,11 +442,13 @@ class ReadFeatures(object):
             result = [x / self.num_reads for x in [
                 self.nm, self.base_qual, self.map_qual,
                 self.align_len, self.clipping, self.indel,
-                self.forward_strand, self.reverse_strand,
+                self.forward_strand, self.reverse_strand, self.supplementary,
                 self.normalised_read_position]]
         else:
             result = ['' for _ in ReadFeatures.fields]
         return result 
+
+# XXX this should be SNVAlleleCounts, so we can have a similar INDELAlleleCounts
 
 class BaseCounts(object):
     fields = ["depth", "A", "T", "G", "C", "N", "ref", "alt", "alt vaf"]
@@ -431,36 +485,179 @@ class BaseCounts(object):
         return [total_depth, self.A, self.T, self.G, self.C, self.N, ref_count, alt_count, alt_vaf]
 
 
-class LocusFeaturesINDEL(object):
-    fields = ["all " + x for x in ReadFeatures.fields]
 
-    '''
-    fields = ["ref " + x for x in ReadFeatures.fields] + \
+# True if the intervals of two indels overlap
+def interval_overlaps(start1, end1, start2, end2):
+    return not((end1 < start2) or (start1 > end2))
+
+'''
+Cigar operations in BAM file
+
+M	BAM_CMATCH	0
+I	BAM_CINS	1
+D	BAM_CDEL	2
+N	BAM_CREF_SKIP	3
+S	BAM_CSOFT_CLIP	4
+H	BAM_CHARD_CLIP	5
+P	BAM_CPAD	6
+=	BAM_CEQUAL	7
+X	BAM_CDIFF	8
+B	BAM_CBACK	9
+
+cigartuples is returned as a list of tuples of (operation, length).
+'''
+
+
+IndelEvent = namedtuple("IndelEvent", ["indel_type", "start", "end", "bases"])
+
+# Determine the allele in the read at the locus of an INDEL variant
+def indels_overlapping_variant(read, var_start, var_end):
+    alignment = read.alignment
+    cigar = alignment.cigartuples
+    # this is the position in the reference where the first non-clipped
+    # base in the read aligns to
+    ref_pos = alignment.reference_start
+    read_pos = 0 
+    result = []
+
+    for operation, length in cigar:
+        if operation == 0:
+            # match
+            ref_pos += length
+            read_pos += length
+        elif operation == 1:
+            # INS
+            this_start = ref_pos
+            this_end = ref_pos + length - 1
+            if interval_overlaps(var_start, var_end, this_start, this_end):
+                inserted_bases = alignment.query_sequence[read_pos: read_pos + length].upper()
+                result.append(IndelEvent(indel_type="INS", start=this_start, end=this_end, bases=inserted_bases))
+            read_pos += length
+        elif operation == 2:
+            # DEL
+            this_start = ref_pos
+            this_end = ref_pos + length - 1
+            if interval_overlaps(var_start, var_end, this_start, this_end):
+                result.append(IndelEvent(indel_type="DEL", start=this_start, end=this_end, bases=""))
+            ref_pos += length
+        elif operation == 3:
+            # REF_SKIP
+            read_pos += length
+        elif operation == 4:
+            # SOFT_CLIP
+            # XXX handle soft clips as potential insertions
+            read_pos += length
+        elif operation == 5:
+            # HARD_CLIP
+            pass
+        elif operation == 6:
+            # PAD
+            pass
+        elif operation == 7:
+            ref_pos += length
+            read_pos += length
+            # EQUAL
+        elif operation == 8:
+            # DIFF
+            ref_pos += length
+            read_pos += length 
+        elif operation == 9:
+            # BACK, XXX not sure what this does
+            pass
+
+    return result 
+        
+
+# get the genome coordinates of where an INDEL variant will actually
+# start, as opposed to the location of where the variant is reported
+# the starting position must take into account the context bases that
+# are given when the variant is reported in the VCF file.
+def get_indel_start_coord(pos, ref, alt):
+    len_ref = len(ref)
+    len_alt = len(alt)
+    shortest_len = min(len_ref, len_alt)
+    return pos + shortest_len
+    
+
+class LocusFeaturesINDEL(object):
+
+    fields = ["depth", "ref_allele", "alt_allele", "other_allele", "alt_vaf", "overlapping_indels"] + \
+             ["ref " + x for x in ReadFeatures.fields] + \
              ["alt " + x for x in ReadFeatures.fields] + \
              ["all " + x for x in ReadFeatures.fields]
-    '''
 
-    def __init__(self, ref, alt):
+    def __init__(self, pos, ref, alt):
         self.ref = ref
         self.alt = alt
-        # features where the read contains the reference base at this position
-        #self.ref_read_features = ReadFeatures()
-        # features where the read contains the alternative base at this position
-        #self.alt_read_features = ReadFeatures()
+        # NOTE: INDELS are reported as one base to the left of the actual variant
+        # to allow for a context base, we retain pos for the purpose and use 
+        # start as the zero-based position of the first base of the actual variant
+        self.pos = pos
+        self.start = get_indel_start_coord(pos, ref, alt) 
+        # XXX this size needs for be fixed for DELINS
+        self.size = abs(len(ref) - len(alt))
+        self.end = self.start + self.size - 1
+        # XXX this size needs for be fixed for DELINS
+        if len(ref) > len(alt):
+            self.indel_type = "DEL"
+            self.bases = ""
+        elif len(alt) > len(ref):
+            self.indel_type = "INS"
+            self.bases = alt[1:]
+        else:
+            self.indel_type = "UNKNOWN"
+        # features where the read contains the reference allele at this position
+        self.ref_read_features = ReadFeatures()
+        # features where the read contains the alternative allele at this position
+        self.alt_read_features = ReadFeatures()
         # features for all reads that overlap this position, regardless of the base
         self.all_read_features = ReadFeatures()
+        self.ref_count = 0
+        self.alt_count = 0
+        self.other_count = 0 
+        self.depth = 0
+        self.overlapping_indels_count = 0
 
     def count(self, read):
+        self.depth += 1
+        # get all the INDELs in the read that overlap this particular variant
+        overlapping_indels = indels_overlapping_variant(read, self.start, self.end)
+        self.overlapping_indels_count += len(overlapping_indels)
+        # Check if any of the (possibly empty) overlapping INDELs support the ALT allele
+        read_supports_alt = False
+        for event in overlapping_indels:
+            if event.indel_type == self.indel_type:
+                if event.start == self.start and event.end == self.end:
+                    if self.indel_type == "DEL" or (self.indel_type == "INS" and event.bases == self.bases):
+                        read_supports_alt = True
+                        break
+        read_supports_ref = False
+        if not overlapping_indels and read.query_position is not None:
+            if self.indel_type == "INS":
+                read_bases = read.alignment.query_sequence[read.query_position].upper()
+            elif self.indel_type == "DEL":
+                read_bases = read.alignment.query_sequence[read.query_position: read.query_position + self.size + 1].upper()
+            if read_bases == self.ref:
+                read_supports_ref = True
+        if read_supports_ref:
+            self.ref_count += 1
+            self.ref_read_features.count(read)
+        elif read_supports_alt:
+            self.alt_count += 1
+            self.alt_read_features.count(read)
+        else:
+            self.other_count += 1 
         self.all_read_features.count(read)
 
     def as_list(self):
-        return self.all_read_features.as_list()
-        '''
-        return self.base_counts.as_list() + \
+        alt_vaf = ''
+        if self.depth > 0:
+            alt_vaf = self.alt_count / self.depth
+        return [self.depth, self.ref_count, self.alt_count, self.other_count, alt_vaf, self.overlapping_indels_count] + \
                self.ref_read_features.as_list() + \
                self.alt_read_features.as_list() + \
                self.all_read_features.as_list()
-        '''
+
 
 class LocusFeaturesSNV(object):
     fields = BaseCounts.fields + \
@@ -512,7 +709,6 @@ class BamReader(object):
         self.varclass = varclass 
 
     # pos is expected to be 1-based 
-    #def variant_features(self, chrom, pos, ref, alt, this_vartype):
     def variant_features(self, variant):
         chrom = variant["chrom"]
         pos = variant["pos"]
@@ -523,7 +719,9 @@ class BamReader(object):
         if vartype == "SNV" and self.varclass == "SNV":
             features = LocusFeaturesSNV(ref, alt)
         elif vartype in ["INS", "DEL"] and self.varclass == "INDEL":
-            features = LocusFeaturesINDEL(ref, alt)
+            # NOTE: indel variants are reported one base to the left of the actual variant
+            # to allow for the reference context base 
+            features = LocusFeaturesINDEL(zero_based_pos, ref, alt)
         for pileupcolumn in self.samfile.pileup(chrom, zero_based_pos, zero_based_pos+1,
                                                truncate=True, stepper='samtools',
                                                ignore_overlaps=False, ignore_orphans=True,
