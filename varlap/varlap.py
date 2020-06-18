@@ -306,7 +306,7 @@ def get_var_type(ref, alt):
 
 
 
-def write_header(options, variant_fieldnames, bam_labels, regions):
+def write_header(writer, options, variant_fieldnames, bam_labels, regions):
     header_general = variant_fieldnames + ["pos normalised", "sample"]
     if options.varclass == "SNV":
         bam_headers = [label + " " + field for label in bam_labels for field in LocusFeaturesSNV.fields]
@@ -317,7 +317,8 @@ def write_header(options, variant_fieldnames, bam_labels, regions):
         if regions is not None:
             header_regions = ["region " + label for label in regions.get_labels()]
         header = header_general + header_regions + bam_headers 
-        print(",".join(header))
+        writer.writerow(header)
+        #print(",".join(header))
 
 
 def get_variant_region_intersections(regions, variant):
@@ -370,25 +371,27 @@ def variant_as_list(variant, fieldnames):
     return [str(variant[f]) for f in fieldnames]
 
 def process_variants_bams(options, regions):
+    writer = csv.writer(sys.stdout)
     bam_labels = get_bam_labels(options.labels, options.bams)
     bam_readers = [BamReader(filepath, options.varclass) for filepath in options.bams]
     variant_reader = VariantReader(sys.stdin, options.format, options.varclass, options.maxindelsize)
-    write_header(options, variant_reader.fieldnames, bam_labels, regions)
+    write_header(writer, options, variant_reader.fieldnames, bam_labels, regions)
     for variant in variant_reader.get_variants():
         pos_normalised = get_chrom_pos_fraction(bam_readers, variant)
         region_counts = get_variant_region_intersections(regions, variant)
         bams_features = [bam_reader.variant_features(variant) for bam_reader in bam_readers]
         output_variant = variant_as_list(variant, variant_reader.fieldnames)
-        write_output_row(output_variant, pos_normalised, options.sample, region_counts, bams_features)
+        write_output_row(writer, output_variant, pos_normalised, options.sample, region_counts, bams_features)
     variant_reader.log_totals()
     for reader in bam_readers:
         reader.close()
 
 
-def write_output_row(variant, pos_normalised, sample, regions, bam_features):
+def write_output_row(writer, variant, pos_normalised, sample, regions, bam_features):
     row_bams = [str(x) for bam in bam_features for x in bam.as_list()]
     row = variant + [str(pos_normalised), sample] + regions + row_bams 
-    print(",".join(row))
+    writer.writerow(row)
+    #print(",".join(row))
  
 
 
