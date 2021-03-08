@@ -140,10 +140,10 @@ The following information is collected for reads overlapping the locus in 3 ways
 
 Get help:
 ```
-varlap -h
-usage: varlap [-h] [--labels [LABEL [LABEL ...]]] [--sample SAMPLE]
-             [--regions REGIONS] [--noheader] [--version] [--log LOG_FILE]
-             BAM [BAM ...]
+$ varlap -h
+usage: varlap [-h] [--labels [LABEL [LABEL ...]]] [--sample SAMPLE] [--regions REGIONS] [--format FORMAT] [--maxindelsize SIZE] [--noheader] [--version] --varclass TYPE
+              [--log LOG_FILE]
+              BAM [BAM ...]
 
 Compute various bits of information about variants in one or more BAM files
 
@@ -156,8 +156,11 @@ optional arguments:
                         Labels for BAM files
   --sample SAMPLE       Sample identifier
   --regions REGIONS     Filepath of genomic regions-of-interest in BED format
+  --format FORMAT       File format of input variants file. Options: CSV, TSV, VCF. Default: CSV
+  --maxindelsize SIZE   Maximum size of indels to consider. Indels above this size will be excluded from analysis and output.
   --noheader            Suppress output header row
   --version             show program's version number and exit
+  --varclass TYPE       Type of variants to consider. Options: SNV, INDEL
   --log LOG_FILE        record program progress in LOG_FILE
 ```
 
