@@ -5,6 +5,7 @@ Copyright   : (c) Bernie Pope, 16 Oct 2019
 License     : MIT 
 Maintainer  : bjpope@unimelb.edu.au 
 Portability : POSIX
+heihei
 '''
 
 from argparse import ArgumentParser
@@ -34,7 +35,7 @@ EXIT_FILE_IO_ERROR = 1
 EXIT_COMMAND_LINE_ERROR = 2
 EXIT_BAD_FILE_FORMAT = 3
 PROGRAM_NAME = "varlap"
-VALID_VARIANT_TYPES = ["SNV", "INDEL"]
+VALID_VARIANT_TYPES = ["SNV", "INDEL", "SV"]
 DEFAULT_INPUT_FILE_FORMAT = "CSV"
 VALID_INPUT_FILE_FORMATS = ["CSV", "TSV", "VCF"]
 
