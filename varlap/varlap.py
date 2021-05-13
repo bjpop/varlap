@@ -175,7 +175,6 @@ class VariantReader(object):
         self.num_variants_analysed = 0
         self.num_variants_skipped = 0
 
-
     def get_variants(self):
         '''Read variants from input VCF file, yield one at a time'''
         for input_row in self.reader: 
@@ -226,7 +225,7 @@ def is_acceptable_variant(row, varclass, vartype, ref, alt, max_indel_size):
         return False
     return True
     
-VALID_DNA_BASES = set("ATGC")
+VALID_DNA_BASES = set("ATGC1234567890[]")
     
 def is_only_DNA_bases(sequence):
     return set(sequence.upper()).issubset(VALID_DNA_BASES) 
@@ -263,6 +262,7 @@ def is_valid_indel(ref, alt):
 
 REQUIRED_INPUT_VARIANT_FIELDS = set(["chrom", "pos", "ref", "alt"])
 
+
 def is_valid_input_row(row):
     return set(row.keys()).issuperset(REQUIRED_INPUT_VARIANT_FIELDS)
 
@@ -295,7 +295,9 @@ def is_desired_type(varclass, vartype):
 
 
 def get_var_type(ref, alt):
-    if len(ref) == 1 and len(alt) == 1:
+    if ( '[' or ']') in (str(ref) or str(alt)):
+        return 'SV'
+    elif len(ref) == 1 and len(alt) == 1:
         return "SNV"
     elif len(ref) > len(alt):
         return "DEL"
