@@ -226,9 +226,11 @@ def is_acceptable_variant(row, varclass, vartype, ref, alt, max_indel_size):
     return True
     
 VALID_DNA_BASES = set("ATGC1234567890[]")
-    
+# 5.11.2021 Jiayu    
+
 def is_only_DNA_bases(sequence):
-    return set(sequence.upper()).issubset(VALID_DNA_BASES) 
+    return set(sequence).issubset(VALID_DNA_BASES)
+# delete upper(), 5.11.2021 Jiayu 
 
 
 # Check that an input variant is within some size bound. This is normally
@@ -241,6 +243,8 @@ def is_within_max_size(varclass, max_indel_size, ref, alt):
     elif varclass == "INDEL" and max_indel_size is not None:
         this_indel_size = abs(len(ref) - len(alt))
         return this_indel_size <= max_indel_size
+    elif varclass == ‘SV’:
+        return True
     return True
 
 # Check that the INDEL is specified in a way that we can interpet:
@@ -291,12 +295,16 @@ def csv_tsv_reader(file, format="CSV"):
 
 def is_desired_type(varclass, vartype):
     return (varclass == "SNV" and vartype == "SNV" or
-            varclass == "INDEL" and vartype in ["INS", "DEL"])
+            varclass == "INDEL" and vartype in ["INS", "DEL"] or
+            varclass == "SV" and vartype == "SV")
+# 5.13.2021 Jiayu
+
 
 
 def get_var_type(ref, alt):
     if ( '[' or ']') in (str(ref) or str(alt)):
         return 'SV'
+# 5.09.2021 Jiayu
     elif len(ref) == 1 and len(alt) == 1:
         return "SNV"
     elif len(ref) > len(alt):
