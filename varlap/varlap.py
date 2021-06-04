@@ -20,6 +20,7 @@ import os.path
 import pathlib
 from copy import copy
 
+
 '''
 Note: on the command line we allow the user to specify a desired "varclass"
 to indicate the class of variant they want to consider. This can be "SNV" or
@@ -213,7 +214,7 @@ def is_acceptable_variant(row, varclass, vartype, ref, alt, max_indel_size):
     if not is_desired_type(varclass, vartype):
         # this particular variant must be of a type that is compatible
         # with the varclass specified on the command line, (SNV, INDEL(
-        logging.info(f"Skipping variant of unwanted type: {vartype} {row}")
+        logging.info(f"Skipping variant of unwanted type: {varclass} {vartype} {row}")
         return False
     if not is_within_max_size(varclass, max_indel_size, ref, alt):
         # The variant must not be longer than the maximum size, if specified
@@ -225,7 +226,7 @@ def is_acceptable_variant(row, varclass, vartype, ref, alt, max_indel_size):
         return False
     return True
     
-VALID_DNA_BASES = set("ATGC1234567890[]")
+VALID_DNA_BASES = set("ATGCN1234567890[]:")
 # 5.11.2021 Jiayu    
 
 def is_only_DNA_bases(sequence):
@@ -243,7 +244,7 @@ def is_within_max_size(varclass, max_indel_size, ref, alt):
     elif varclass == "INDEL" and max_indel_size is not None:
         this_indel_size = abs(len(ref) - len(alt))
         return this_indel_size <= max_indel_size
-    elif varclass == ‘SV’:
+    elif varclass == 'SV':
         return True
     return True
 
@@ -302,7 +303,7 @@ def is_desired_type(varclass, vartype):
 
 
 def get_var_type(ref, alt):
-    if ( '[' or ']') in (str(ref) or str(alt)):
+    if '[' in ref or ']' in ref or '[' in alt or ']' in alt:
         return 'SV'
 # 5.09.2021 Jiayu
     elif len(ref) == 1 and len(alt) == 1:
@@ -319,10 +320,13 @@ def get_var_type(ref, alt):
 
 def write_header(writer, options, variant_fieldnames, bam_labels, regions):
     header_general = variant_fieldnames + ["pos normalised", "sample"]
+    
     if options.varclass == "SNV":
         bam_headers = [label + " " + field for label in bam_labels for field in LocusFeaturesSNV.fields]
     elif options.varclass == "INDEL":
         bam_headers = [label + " " + field for label in bam_labels for field in LocusFeaturesINDEL.fields]
+    elif options.varclass == "SV":
+         bam_headers = []
     if not options.noheader:
         header_regions = []
         if regions is not None:
@@ -730,6 +734,9 @@ class BamReader(object):
         alt = variant["alt"]
         vartype = variant["vartype"] 
         zero_based_pos = pos - 1
+# jiayu 06/03/2021
+        if vartype == "SV" and self.varclass == "SV":
+            features = LocusFeaturesSNV(ref, alt)
         if vartype == "SNV" and self.varclass == "SNV":
             features = LocusFeaturesSNV(ref, alt)
         elif vartype in ["INS", "DEL"] and self.varclass == "INDEL":
@@ -818,6 +825,7 @@ def get_regions(filepath):
 
 def main():
     "Orchestrate the execution of the program"
+    import pdb; pdb.set_trace()
     options = parse_args()
     init_logging(options.log)
     regions = get_regions(options.regions)
@@ -828,3 +836,4 @@ def main():
 # If this script is run from the command line then call the main function.
 if __name__ == '__main__':
     main()
+
