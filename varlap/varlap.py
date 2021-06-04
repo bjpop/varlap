@@ -373,12 +373,13 @@ def variant_as_list(variant, fieldnames):
     return [str(variant[f]) for f in fieldnames]
 
 
+# XXX remember to close the input file if not sys.stdin
 def get_variant_reader(options):
     if options.vars is not None:
         try:
            input_file = open(options.vars)
+        # XXX should refine this to the appropriate exceptions
         except Exception as e:
-           print(e)
            exit_with_error(f"Input variant file does not exist or could not be opened: {options.vars}", EXIT_FILE_IO_ERROR)
     else:
        input_file = sys.stdin
@@ -822,7 +823,6 @@ def get_regions(filepath):
 
 
 def main():
-    breakpoint()
     "Orchestrate the execution of the program"
     options = parse_args()
     init_logging(options.log)
