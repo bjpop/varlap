@@ -71,6 +71,8 @@ def parse_args():
     parser.add_argument(
         'bams', nargs='+', metavar='BAM', type=str, help='Filepaths of BAM files')
     parser.add_argument(
+        '--vars', required=False, metavar='FILE', type=str, help=f'Optional filepath of input variants. Allowed formats: {",".join(VALID_INPUT_FILE_FORMATS)}')
+    parser.add_argument(
         '--labels', required=False, nargs='*', metavar='LABEL', type=str, help='Labels for BAM files')
     parser.add_argument(
         '--sample', default='', required=False, metavar='SAMPLE', type=str, help='Sample identifier')
@@ -385,11 +387,25 @@ def get_chrom_pos_fraction(readers, variant):
 def variant_as_list(variant, fieldnames):
     return [str(variant[f]) for f in fieldnames]
 
+# XXX remember to close the input file if not sys.stdin
+def get_variant_reader(options):
+    if options.vars is not None:
+        try:
+           input_file = open(options.vars)
+        # XXX should refine this to the appropriate exceptions
+        except Exception as e:
+           exit_with_error(f"Input variant file does not exist or could not be opened: {options.vars}", EXIT_FILE_IO_ERROR)
+    else:
+       input_file = sys.stdin
+    variant_reader = VariantReader(input_file, options.format, options.varclass, options.maxindelsize)
+    return variant_reader
+
+
 def process_variants_bams(options, regions):
     writer = csv.writer(sys.stdout)
     bam_labels = get_bam_labels(options.labels, options.bams)
     bam_readers = [BamReader(filepath, options.varclass) for filepath in options.bams]
-    variant_reader = VariantReader(sys.stdin, options.format, options.varclass, options.maxindelsize)
+    variant_reader = get_variant_reader(options)
     write_header(writer, options, variant_reader.fieldnames, bam_labels, regions)
     for variant in variant_reader.get_variants():
         pos_normalised = get_chrom_pos_fraction(bam_readers, variant)
