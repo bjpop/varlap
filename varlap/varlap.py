@@ -731,6 +731,44 @@ class LocusFeaturesSNV(object):
                self.alt_read_features.as_list() + \
                self.all_read_features.as_list()
 
+# 06.11.2021 Jiayu
+class LocusFeaturesSV(object):
+    fields = BaseCounts.fields + \
+             ["ref " + x for x in ReadFeatures.fields] + \
+             ["alt " + x for x in ReadFeatures.fields] + \
+             ["all " + x for x in ReadFeatures.fields]
+
+    def __init__(self, ref, alt):
+        self.ref = ref
+        self.alt = alt
+        # counts of DNA bases at this pileup position
+        # delete this step above 
+        # features where the read contains the reference base at this position
+        self.ref_read_features = ReadFeatures()
+        # features where the read contains the alternative base at this position
+        # delete this step above
+        # features for all reads that overlap this position, regardless of the base
+        self.all_read_features = ReadFeatures()
+
+    def count(self, read):
+        # Get the DNA base from the current read if we can
+        if not read.is_del and not read.is_refskip:
+            base = read.alignment.query_sequence[read.query_position].upper()
+            self.base_counts.count(base)
+            if base == self.ref:
+                # only count features of reads containing the reference base
+                self.ref_read_features.count(read)
+            elif base == self.alt:
+                # only count features of reads containing the alternative base
+                self.alt_read_features.count(read)
+        # count features of reads regardless of the base
+        self.all_read_features.count(read)
+
+    def as_list(self):
+        return self.base_counts.as_list() + \
+               self.ref_read_features.as_list() + \
+               self.alt_read_features.as_list() + \
+               self.all_read_features.as_list()
 
 MAX_PILEUP_DEPTH = 1000000000
 
@@ -750,9 +788,9 @@ class BamReader(object):
         alt = variant["alt"]
         vartype = variant["vartype"] 
         zero_based_pos = pos - 1
-# jiayu 06/03/2021
+# jiayu 06/11/2021
         if vartype == "SV" and self.varclass == "SV":
-            features = LocusFeaturesSNV(ref, alt)
+            features = LocusFeaturesSV(ref, alt)
         if vartype == "SNV" and self.varclass == "SNV":
             features = LocusFeaturesSNV(ref, alt)
         elif vartype in ["INS", "DEL"] and self.varclass == "INDEL":
@@ -841,7 +879,6 @@ def get_regions(filepath):
 
 def main():
     "Orchestrate the execution of the program"
-    import pdb; pdb.set_trace()
     options = parse_args()
     init_logging(options.log)
     regions = get_regions(options.regions)
