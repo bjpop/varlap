@@ -736,7 +736,7 @@ class LocusFeaturesSNV(object):
 class LocusFeaturesSV(object):
     fields = ["all " + x for x in ReadFeatures.fields]
 
-    def __init__(self, ref, alt):
+    def __init__(self):
         self.all_read_features = ReadFeatures()
 
     def count(self, read):
