@@ -327,6 +327,7 @@ def write_header(writer, options, variant_fieldnames, bam_labels, regions):
         bam_headers = [label + " " + field for label in bam_labels for field in LocusFeaturesSNV.fields]
     elif options.varclass == "INDEL":
         bam_headers = [label + " " + field for label in bam_labels for field in LocusFeaturesINDEL.fields]
+#0612/2021 Jiayu
     elif options.varclass == "SV":
         bam_headers = [label + " " + field for label in bam_labels for field in LocusFeaturesSV.fields]
     if not options.noheader:
