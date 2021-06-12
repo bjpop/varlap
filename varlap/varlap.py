@@ -758,7 +758,7 @@ class BamReader(object):
 
     # pos is expected to be 1-based 
     def variant_features(self, variant):
-        chrom = str(variant["chrom"])[3:]
+        chrom = variant["chrom"]
         pos = variant["pos"]
         ref = variant["ref"]
         alt = variant["alt"]
