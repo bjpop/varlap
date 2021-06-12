@@ -328,7 +328,7 @@ def write_header(writer, options, variant_fieldnames, bam_labels, regions):
     elif options.varclass == "INDEL":
         bam_headers = [label + " " + field for label in bam_labels for field in LocusFeaturesINDEL.fields]
     elif options.varclass == "SV":
-         bam_headers = []
+        bam_headers = [label + " " + field for label in bam_labels for field in LocusFeaturesSV.fields]
     if not options.noheader:
         header_regions = []
         if regions is not None:
@@ -733,42 +733,17 @@ class LocusFeaturesSNV(object):
 
 # 06.11.2021 Jiayu
 class LocusFeaturesSV(object):
-    fields = BaseCounts.fields + \
-             ["ref " + x for x in ReadFeatures.fields] + \
-             ["alt " + x for x in ReadFeatures.fields] + \
-             ["all " + x for x in ReadFeatures.fields]
+    fields = ["all " + x for x in ReadFeatures.fields]
 
     def __init__(self, ref, alt):
-        self.ref = ref
-        self.alt = alt
-        # counts of DNA bases at this pileup position
-        # delete this step above 
-        # features where the read contains the reference base at this position
-        self.ref_read_features = ReadFeatures()
-        # features where the read contains the alternative base at this position
-        # delete this step above
-        # features for all reads that overlap this position, regardless of the base
         self.all_read_features = ReadFeatures()
 
     def count(self, read):
         # Get the DNA base from the current read if we can
-        if not read.is_del and not read.is_refskip:
-            base = read.alignment.query_sequence[read.query_position].upper()
-            self.base_counts.count(base)
-            if base == self.ref:
-                # only count features of reads containing the reference base
-                self.ref_read_features.count(read)
-            elif base == self.alt:
-                # only count features of reads containing the alternative base
-                self.alt_read_features.count(read)
-        # count features of reads regardless of the base
-        self.all_read_features.count(read)
+         self.all_read_features.count(read)
 
     def as_list(self):
-        return self.base_counts.as_list() + \
-               self.ref_read_features.as_list() + \
-               self.alt_read_features.as_list() + \
-               self.all_read_features.as_list()
+        return self.all_read_features.as_list()
 
 MAX_PILEUP_DEPTH = 1000000000
 
@@ -790,7 +765,7 @@ class BamReader(object):
         zero_based_pos = pos - 1
 # jiayu 06/11/2021
         if vartype == "SV" and self.varclass == "SV":
-            features = LocusFeaturesSV(ref, alt)
+            features = LocusFeaturesSV()
         if vartype == "SNV" and self.varclass == "SNV":
             features = LocusFeaturesSNV(ref, alt)
         elif vartype in ["INS", "DEL"] and self.varclass == "INDEL":
