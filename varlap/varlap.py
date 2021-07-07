@@ -157,6 +157,57 @@ or angle-brackets are permitted in the ID String itself)
 
 # XXX support for DELINS
 
+'''
+According to VCF 4.2 spec, section 5.4
+There are 4 possible ways to create the ALT in a SVTYPE=BND. In each of the 4 cases,
+the assertion is that s (the REF) is replaced with t, and then some piece starting at
+position p is joined to t. The cases are:
+s t[p[ piece extending to the right of p is joined after t
+s t]p] reverse comp piece extending left of p is joined after t
+s ]p]t piece extending to the left of p is joined before t
+s [p[t reverse comp piece extending right of p is joined before t
+'''
+
+# t[p[, bp1 is right of pos1, bp2 is left of pos2 
+INFO_ALT_REGEX_1 = re.compile(r"(?P<replacement>\w+)\[(?P<chrom>[^\s:]+)\:(?P<pos>\d+)\[")
+# t]p], bp1 is right of pos1, bp2 is right of pos2
+INFO_ALT_REGEX_2 = re.compile(r"(?P<replacement>\w+)\](?P<chrom>[^\s:]+)\:(?P<pos>\d+)\]")
+# ]p]t, bp1 is left of pos1, bp2 is right of pos2
+INFO_ALT_REGEX_3 = re.compile(r"\](?P<chrom>[^\s:]+)\:(?P<pos>\d+)\](?P<replacement>\w+)")
+# [p[t, bp1 is left of pos1, bp2 is left of pos2
+INFO_ALT_REGEX_4 = re.compile(r"\[(?P<chrom>[^\s:]+)\:(?P<pos>\d+)\[(?P<replacement>\w+)")
+
+class SVException(Exception):
+    pass 
+
+
+# XXX handle multiple ALTs
+def parse_bnd(info_alt):
+    if len(info_alt) == 1:
+        first_alt = info_alt[0]
+    else:
+        exit_with_error("BND ALT field without exactly one entry: {}".format(info_alt),
+            EXIT_VCF_FILE_ERROR) 
+    match1 = INFO_ALT_REGEX_1.match(first_alt)
+    match2 = INFO_ALT_REGEX_2.match(first_alt)
+    match3 = INFO_ALT_REGEX_3.match(first_alt)
+    match4 = INFO_ALT_REGEX_4.match(first_alt)
+    if match1 is not None:
+        return match1.group('chrom'), int(match1.group('pos')), match1.group('replacement'), "R", "L"
+    elif match2 is not None:
+        return match2.group('chrom'), int(match2.group('pos')), match2.group('replacement'), "R", "R"
+    elif match3 is not None:
+        return match3.group('chrom'), int(match3.group('pos')), match3.group('replacement'), "L", "R"
+    elif match4 is not None:
+        return match4.group('chrom'), int(match4.group('pos')), match4.group('replacement'), "L", "L"
+    else:
+        logging.warn(f"Cannot parse coordinate from BND variant ALT field: {first_alt}") 
+        raise(SVException)
+
+
+
+
+
 class VariantReader(object):
     def __init__(self, file, file_format, varclass, max_indel_size=None):
         self.file = file
@@ -178,23 +229,45 @@ class VariantReader(object):
         self.num_variants_analysed = 0
         self.num_variants_skipped = 0
 
+    
     def get_variants(self):
         '''Read variants from input VCF file, yield one at a time'''
-        for input_row in self.reader: 
+        for input_row in self.reader:
             self.total_variants_in_input += 1
             if is_valid_input_row(input_row):
                 this_ref = input_row["ref"]
                 # allow possibly multiple alts in the same variant, split them into separate alleles
-                alts = input_row["alt"].split(",")
-                for this_alt in alts:
-                    this_var_type = get_var_type(this_ref, this_alt)
-                    if is_acceptable_variant(dict(input_row), self.varclass, this_var_type, this_ref, this_alt, self.max_indel_size):
-                        output_row = copy(input_row)
-                        output_row["alt"] = this_alt
-                        output_row["pos"] = int(input_row["pos"])
-                        output_row["vartype"] = this_var_type
-                        self.num_variants_analysed += 1
-                        yield output_row
+
+                if options.varclass == "SV":
+
+                    self.num_variants_analysed += 1
+
+                    output_row_1 = copy(input_row)
+                    output_row_1["pos"] = int(input_row["pos"])
+                    output_row_1["vartype"] = this_var_type
+                    yield output_row_1
+
+                    this_alt = input_row['alt']
+                    this_chrom, this_pos, _this_replacement, _breakside1, _breakside2 = parse_bnd(this_alt)
+
+                    output_row_2 = copy(input_row)
+                    output_row_2["chrom"] = this_chrom
+                    output_row_2["alt"] = this_alt
+                    output_row_2["pos"] = int(this_pos)
+                    output_row_2["vartype"] = this_var_type
+                    yield output_row_2
+
+                else:
+                    alts = input_row["alt"].split(",")
+                    for this_alt in alts:
+                        this_var_type = get_var_type(this_ref, this_alt)
+                        if is_acceptable_variant(dict(input_row), self.varclass, this_var_type, this_ref, this_alt, self.max_indel_size):
+                            output_row = copy(input_row)
+                            output_row["alt"] = this_alt
+                            output_row["pos"] = int(input_row["pos"])
+                            output_row["vartype"] = this_var_type
+                            self.num_variants_analysed += 1
+                            yield output_row
             else:
                 logging.warning(f"Skipping invalid input row: {dict(input_row)}")
 
@@ -203,7 +276,6 @@ class VariantReader(object):
         logging.info(f"Total variants in input: {self.total_variants_in_input}")
         logging.info(f"Num variants kept for analysis: {self.num_variants_analysed}")
         logging.info(f"Num variants skipped: {self.num_variants_skipped}")
-
 
 # Check if an input variant is acceptable for this analysis and valid
 # The purpose of this method is to reject and thus skup any input variants
