@@ -19,7 +19,7 @@ from intervaltree import Interval, IntervalTree
 import os.path
 import pathlib
 from copy import copy
-
+import re
 
 '''
 Note: on the command line we allow the user to specify a desired "varclass"
