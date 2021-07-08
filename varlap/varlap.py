@@ -184,15 +184,11 @@ class SVException(Exception):
 
 # XXX handle multiple ALTs
 def parse_bnd(info_alt):
-    if len(info_alt) == 1:
-        first_alt = info_alt[0]
-    else:
-        exit_with_error("BND ALT field without exactly one entry: {}".format(info_alt),
-            EXIT_BAD_FILE_FORMAT) 
-    match1 = INFO_ALT_REGEX_1.match(first_alt)
-    match2 = INFO_ALT_REGEX_2.match(first_alt)
-    match3 = INFO_ALT_REGEX_3.match(first_alt)
-    match4 = INFO_ALT_REGEX_4.match(first_alt)
+    
+    match1 = INFO_ALT_REGEX_1.match(info_alt)
+    match2 = INFO_ALT_REGEX_2.match(info_alt)
+    match3 = INFO_ALT_REGEX_3.match(info_alt)
+    match4 = INFO_ALT_REGEX_4.match(info_alt)
     if match1 is not None:
         return match1.group('chrom'), int(match1.group('pos')), match1.group('replacement'), "R", "L"
     elif match2 is not None:
@@ -202,7 +198,7 @@ def parse_bnd(info_alt):
     elif match4 is not None:
         return match4.group('chrom'), int(match4.group('pos')), match4.group('replacement'), "L", "L"
     else:
-        logging.warn(f"Cannot parse coordinate from BND variant ALT field: {first_alt}") 
+        logging.warn(f"Cannot parse coordinate from BND variant ALT field: {info_alt}") 
         raise(SVException)
 
 
