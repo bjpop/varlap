@@ -238,36 +238,34 @@ class VariantReader(object):
                 this_ref = input_row["ref"]
                 # allow possibly multiple alts in the same variant, split them into separate alleles
 
-                if options.varclass == "SV":
+                alts = input_row["alt"].split(",")
+                for this_alt in alts:
+                    this_var_type = get_var_type(this_ref, this_alt)
+                    if this_var_type == "SV":
 
-                    self.num_variants_analysed += 1
+                        self.num_variants_analysed += 1
 
-                    output_row_1 = copy(input_row)
-                    output_row_1["pos"] = int(input_row["pos"])
-                    output_row_1["vartype"] = this_var_type
-                    yield output_row_1
+                        output_row_1 = copy(input_row)
+                        output_row_1["pos"] = int(input_row["pos"])
+                        output_row_1["vartype"] = this_var_type
+                        yield output_row_1
 
-                    this_alt = input_row['alt']
-                    this_chrom, this_pos, _this_replacement, _breakside1, _breakside2 = parse_bnd(this_alt)
+                        this_alt = input_row['alt']
+                        this_chrom, this_pos, _this_replacement, _breakside1, _breakside2 = parse_bnd(this_alt)
 
-                    output_row_2 = copy(input_row)
-                    output_row_2["chrom"] = this_chrom
-                    output_row_2["alt"] = this_alt
-                    output_row_2["pos"] = int(this_pos)
-                    output_row_2["vartype"] = this_var_type
-                    yield output_row_2
-
-                else:
-                    alts = input_row["alt"].split(",")
-                    for this_alt in alts:
-                        this_var_type = get_var_type(this_ref, this_alt)
-                        if is_acceptable_variant(dict(input_row), self.varclass, this_var_type, this_ref, this_alt, self.max_indel_size):
-                            output_row = copy(input_row)
-                            output_row["alt"] = this_alt
-                            output_row["pos"] = int(input_row["pos"])
-                            output_row["vartype"] = this_var_type
-                            self.num_variants_analysed += 1
-                            yield output_row
+                        output_row_2 = copy(input_row)
+                        output_row_2["chrom"] = this_chrom
+                        output_row_2["alt"] = this_alt
+                        output_row_2["pos"] = int(this_pos)
+                        output_row_2["vartype"] = this_var_type
+                        yield output_row_2
+                    elif is_acceptable_variant(dict(input_row), self.varclass, this_var_type, this_ref, this_alt, self.max_indel_size):
+                        output_row = copy(input_row)
+                        output_row["alt"] = this_alt
+                        output_row["pos"] = int(input_row["pos"])
+                        output_row["vartype"] = this_var_type
+                        self.num_variants_analysed += 1
+                        yield output_row
             else:
                 logging.warning(f"Skipping invalid input row: {dict(input_row)}")
 
