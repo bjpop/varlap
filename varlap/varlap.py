@@ -35,6 +35,7 @@ However, within the program we break the classes of variants down further into
 EXIT_FILE_IO_ERROR = 1
 EXIT_COMMAND_LINE_ERROR = 2
 EXIT_BAD_FILE_FORMAT = 3
+
 PROGRAM_NAME = "varlap"
 VALID_VARIANT_TYPES = ["SNV", "INDEL", "SV"]
 DEFAULT_INPUT_FILE_FORMAT = "CSV"
@@ -187,7 +188,7 @@ def parse_bnd(info_alt):
         first_alt = info_alt[0]
     else:
         exit_with_error("BND ALT field without exactly one entry: {}".format(info_alt),
-            EXIT_VCF_FILE_ERROR) 
+            EXIT_BAD_FILE_FORMAT) 
     match1 = INFO_ALT_REGEX_1.match(first_alt)
     match2 = INFO_ALT_REGEX_2.match(first_alt)
     match3 = INFO_ALT_REGEX_3.match(first_alt)
