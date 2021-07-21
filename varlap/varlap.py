@@ -75,7 +75,7 @@ def parse_args():
     parser.add_argument('--minmapqual', type=int, required=False, default=DEFAULT_MIN_MAPQUAL,
         help='Minimum mapping quality threshold for reads. Default: %(default)s')
     parser.add_argument('--minbasequal', type=int, required=False, default=DEFAULT_MIN_BASEQUAL,
-        help='Minimum based quality threshold for bases. Default: %(default)s')
+        help='Minimum base quality threshold for bases. Default: %(default)s')
     parser.add_argument(
         '--sample', default='', required=False, metavar='SAMPLE', type=str, help='Sample identifier')
     parser.add_argument(
