@@ -35,8 +35,10 @@ EXIT_COMMAND_LINE_ERROR = 2
 EXIT_BAD_FILE_FORMAT = 3
 PROGRAM_NAME = "varlap"
 VALID_VARIANT_TYPES = ["SNV", "INDEL"]
-DEFAULT_INPUT_FILE_FORMAT = "CSV"
 VALID_INPUT_FILE_FORMATS = ["CSV", "TSV", "VCF"]
+DEFAULT_INPUT_FILE_FORMAT = "CSV"
+DEFAULT_MIN_BASEQUAL = 0
+DEFAULT_MIN_MAPQUAL = 0
 
 
 try:
@@ -70,6 +72,10 @@ def parse_args():
         'bams', nargs='+', metavar='BAM', type=str, help='Filepaths of BAM files')
     parser.add_argument(
         '--labels', required=False, nargs='*', metavar='LABEL', type=str, help='Labels for BAM files')
+    parser.add_argument('--minmapqual', type=int, required=False, default=DEFAULT_MIN_MAPQUAL,
+        help='Minimum mapping quality threshold for reads. Default: %(default)s')
+    parser.add_argument('--minbasequal', type=int, required=False, default=DEFAULT_MIN_BASEQUAL,
+        help='Minimum based quality threshold for bases. Default: %(default)s')
     parser.add_argument(
         '--sample', default='', required=False, metavar='SAMPLE', type=str, help='Sample identifier')
     parser.add_argument(
@@ -345,7 +351,7 @@ def get_variant_region_intersections(regions, variant):
 def get_bam_labels(labels, bam_files):
     result = []
     for index, bam_filename in enumerate(bam_files):
-        if labels is not None and index <= len(labels):
+        if labels is not None and index < len(labels):
             result.append(labels[index])
         else:
             name = pathlib.PurePath(bam_filename).name
@@ -390,7 +396,7 @@ def get_variant_reader(options):
 def process_variants_bams(options, regions):
     writer = csv.writer(sys.stdout)
     bam_labels = get_bam_labels(options.labels, options.bams)
-    bam_readers = [BamReader(filepath, options.varclass) for filepath in options.bams]
+    bam_readers = [BamReader(filepath, options.varclass, options.minmapqual, options.minbasequal) for filepath in options.bams]
     variant_reader = get_variant_reader(options)
     write_header(writer, options, variant_reader.fieldnames, bam_labels, regions)
     for variant in variant_reader.get_variants():
@@ -721,12 +727,14 @@ class LocusFeaturesSNV(object):
 MAX_PILEUP_DEPTH = 1000000000
 
 class BamReader(object):
-    def __init__(self, filepath, varclass):
+    def __init__(self, filepath, varclass, minmapqual, minbasequal):
         logging.info(f"Reading BAM file: {filepath}")
         resolved_path = os.path.realpath(filepath)
         logging.info(f"Resolved filepath to: {resolved_path}")
         self.samfile = pysam.AlignmentFile(resolved_path, "rb")
         self.varclass = varclass 
+        self.minmapqual = minmapqual
+        self.minbasequal = minbasequal
 
     # pos is expected to be 1-based 
     def variant_features(self, variant):
@@ -745,6 +753,8 @@ class BamReader(object):
         for pileupcolumn in self.samfile.pileup(chrom, zero_based_pos, zero_based_pos+1,
                                                truncate=True, stepper='samtools',
                                                ignore_overlaps=False, ignore_orphans=True,
+                                               min_base_quality=self.minbasequal,
+                                               min_mapping_quality=self.minmapqual,
                                                max_depth=MAX_PILEUP_DEPTH): 
             for read in pileupcolumn.pileups:
                 features.count(read)
