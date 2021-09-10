@@ -512,6 +512,8 @@ class ReadFeatures(object):
         self.supplementary = 0
         self.normalised_read_position = 0 
         self.num_reads = 0
+        self.num_soft_clipped = 0
+	self.num_hard_clipped = 0
 
     # See: https://pysam.readthedocs.io/en/latest/api.html#pysam.AlignedSegment.get_cigar_stats
     def count(self, read):
@@ -528,6 +530,11 @@ class ReadFeatures(object):
         cigar_stats = alignment.get_cigar_stats()[0]
         if len(cigar_stats) == 11:
             self.nm += cigar_stats[10]
+            # count the number of soft/hard clipped reads
+	    if cigar_stats[4] != 0:
+	    	self.num_soft_clipped += 1
+	    if cigar_stats[5 != 0:	
+		self.num_hard_clipped += 1	
             # count soft and hard clips together
             self.clipping += cigar_stats[4] + cigar_stats[5]
             self.indel += cigar_stats[1] + cigar_stats[2]
@@ -545,7 +552,7 @@ class ReadFeatures(object):
                 self.nm, self.base_qual, self.map_qual,
                 self.align_len, self.clipping, self.indel,
                 self.forward_strand, self.reverse_strand, self.supplementary,
-                self.normalised_read_position]]
+                self.normalised_read_position, self.num_soft_clipped, self.num_hard_clipped]]
         else:
             result = ['' for _ in ReadFeatures.fields]
         return result 
