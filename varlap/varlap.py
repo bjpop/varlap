@@ -69,7 +69,10 @@ def parse_args():
     description = 'Compute various bits of information about variants in one or more BAM files'
     parser = ArgumentParser(description=description)
     parser.add_argument(
-        'bams', nargs='+', metavar='BAM', type=str, help='Filepaths of BAM files')
+        'bams', nargs='+', metavar='BAM', type=str, help='Filepaths of BAM/CRAM files')
+    parser.add_argument(
+        '--reference', required=False, metavar='FASTA', type=str,
+        help='Filepath of the reference genome in FASTA format. Required for CRAM inputs, ignored for BAM inputs.')
     parser.add_argument(
         '--labels', required=False, nargs='*', metavar='LABEL', type=str, help='Labels for BAM files')
     parser.add_argument('--minmapqual', type=int, required=False, default=DEFAULT_MIN_MAPQUAL,
@@ -396,7 +399,7 @@ def get_variant_reader(options):
 def process_variants_bams(options, regions):
     writer = csv.writer(sys.stdout)
     bam_labels = get_bam_labels(options.labels, options.bams)
-    bam_readers = [BamReader(filepath, options.varclass, options.minmapqual, options.minbasequal) for filepath in options.bams]
+    bam_readers = [BamReader(filepath, options.varclass, options.minmapqual, options.minbasequal, options.reference) for filepath in options.bams]
     variant_reader = get_variant_reader(options)
     write_header(writer, options, variant_reader.fieldnames, bam_labels, regions)
     for variant in variant_reader.get_variants():
@@ -727,11 +730,15 @@ class LocusFeaturesSNV(object):
 MAX_PILEUP_DEPTH = 1000000000
 
 class BamReader(object):
-    def __init__(self, filepath, varclass, minmapqual, minbasequal):
+    def __init__(self, filepath, varclass, minmapqual, minbasequal, reference=None):
         logging.info(f"Reading BAM file: {filepath}")
         resolved_path = os.path.realpath(filepath)
         logging.info(f"Resolved filepath to: {resolved_path}")
-        self.samfile = pysam.AlignmentFile(resolved_path, "rb")
+        # reference_filename is only used by htslib when the input is CRAM,
+        # so it is safe to pass unconditionally for BAM inputs
+        if reference is not None:
+            logging.info(f"Using reference sequence: {reference}")
+        self.samfile = pysam.AlignmentFile(resolved_path, "rb", reference_filename=reference)
         self.varclass = varclass 
         self.minmapqual = minmapqual
         self.minbasequal = minbasequal
